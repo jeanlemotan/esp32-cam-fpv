@@ -4,10 +4,10 @@ esp32 cam digital, low latency FPV
 This project uses a modified esp-camera component running on an AI Thinker board to send low-latency mjpeg video to a Raspberry PI base station with 1-2 wifi cards using packet injection and monitor mode.
 
 It uses FEC encoding (K4 N7 currently configured) 1400 byte packets and it achieves quite good performance:
-* Up to 16Mbps video rate
-* 12.5 FPS @1024x768, 34-42 FPS (temperature dependent) @800x600 or 640x480 and >90 FPS @400x296 or lower
-* 25-50ms latency glass-to-glass, meassured very accurately on an oscilloscope at high FPS (90 FPS)
-* 50-80ms at medium FPS
+* Up to 16Mbps video rate.
+* >90 FPS @400x296 or lower with 20-50 ms latency.
+* 34-44 FPS (temperature dependent) @800x600 or 640x480 with 50-80 ms latency.
+* 12 FPS @1024x768 with >100 ms latency.
 * Air unit weighs in at 18g with camera, antenna and a 3D printed case.
 
 The ESP wifi is fully configurable (rate, power).
