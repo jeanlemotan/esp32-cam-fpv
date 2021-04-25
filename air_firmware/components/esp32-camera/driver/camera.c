@@ -135,8 +135,6 @@ typedef struct {
     dma_filter_t dma_filter;
     intr_handle_t i2s_intr_handle;
     QueueHandle_t data_ready;
-//    QueueHandle_t fb_in;
-//    QueueHandle_t fb_out;
 
     SemaphoreHandle_t frame_ready;
     TaskHandle_t dma_filter_task;
@@ -632,38 +630,6 @@ static void IRAM_ATTR camera_fb_done()
     }
 
     fb = s_state->fb;
-
-    /*
-    if(!fb->ref && fb->len) {
-        //add reference
-        fb->ref = 1;
-
-        //check if the queue is full
-        if(xQueueIsQueueFullFromISR(s_state->fb_out) == pdTRUE) {
-            //pop frame buffer from the queue
-            if(xQueueReceiveFromISR(s_state->fb_out, &fb2, &taskAwoken) == pdTRUE) {
-                //free the popped buffer
-                fb2->ref = 0;
-                fb2->len = 0;
-                //push the new frame to the end of the queue
-                xQueueSendFromISR(s_state->fb_out, &fb, &taskAwoken);
-            } else {
-                //queue is full and we could not pop a frame from it
-            }
-        } else {
-            //push the new frame to the end of the queue
-            xQueueSendFromISR(s_state->fb_out, &fb, &taskAwoken);
-        }
-    } else {
-        //frame was referenced or empty
-    }
-    */
-
-    //return buffers to be filled
-    // while(xQueueReceiveFromISR(s_state->fb_in, &fb2, &taskAwoken) == pdTRUE) {
-    //     fb2->ref = 0;
-    //     fb2->len = 0;
-    // }
 
     //advance frame buffer only if the current one has data
     if(s_state->fb->len) {
@@ -1345,15 +1311,6 @@ esp_err_t camera_init(const camera_config_t* config)
             goto fail;
         }
     } else {
-/*        
-        s_state->fb_in = xQueueCreate(s_state->config.fb_count, sizeof(camera_fb_t *));
-        s_state->fb_out = xQueueCreate(1, sizeof(camera_fb_t *));
-        if (s_state->fb_in == NULL || s_state->fb_out == NULL) {
-            ESP_LOGE(TAG, "Failed to fb queues");
-            err = ESP_ERR_NO_MEM;
-            goto fail;
-        }
-*/        
     }
 
     //ToDo: core affinity?
@@ -1479,12 +1436,6 @@ esp_err_t esp_camera_deinit()
     if (s_state->data_ready) {
         vQueueDelete(s_state->data_ready);
     }
-    // if (s_state->fb_in) {
-    //     vQueueDelete(s_state->fb_in);
-    // }
-    // if (s_state->fb_out) {
-    //     vQueueDelete(s_state->fb_out);
-    // }
     if (s_state->frame_ready) {
         vSemaphoreDelete(s_state->frame_ready);
     }
@@ -1529,24 +1480,8 @@ camera_fb_t* esp_camera_fb_get()
         }
         return (camera_fb_t*)s_state->fb;
     }
-    camera_fb_int_t * fb = NULL;
-    // if(s_state->fb_out) {
-    //     if (xQueueReceive(s_state->fb_out, &fb, FB_GET_TIMEOUT) != pdTRUE) {
-    //         i2s_stop(&need_yield);
-    //         ESP_LOGE(TAG, "Failed to get the frame on time!");
-    //         return NULL;
-    //     }
-    // }
-    return (camera_fb_t*)fb;
+    return NULL;
 }
-
-// void esp_camera_fb_return(camera_fb_t * fb)
-// {
-//     if(fb == NULL || s_state == NULL || s_state->config.fb_count == 1 || s_state->fb_in == NULL) {
-//         return;
-//     }
-//     xQueueSend(s_state->fb_in, &fb, portMAX_DELAY);
-// }
 
 sensor_t * esp_camera_sensor_get()
 {
