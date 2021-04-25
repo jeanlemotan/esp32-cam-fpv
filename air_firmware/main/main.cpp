@@ -371,10 +371,20 @@ static size_t s_sd_file_size = 0;
 static uint32_t s_sd_next_session_id = 0;
 static uint32_t s_sd_next_segment_id = 0;
 
-static constexpr size_t SD_FAST_BUFFER_SIZE = 16384;
-static constexpr size_t SD_SLOW_BUFFER_SIZE = 3 * 1024 * 1024;
+//the fast buffer is RAM and used to transfer data quickly from the camera callback to the slow, SPIRAM buffer. 
+//Writing directly to the SPIRAM buffer is too slow in the camera callback and causes lost frames, so I use this RAM buffer and a separate task (sd_enqueue_task) for that.
+static constexpr size_t SD_FAST_BUFFER_SIZE = 28000;
 Circular_Buffer s_sd_fast_buffer(new uint8_t[SD_FAST_BUFFER_SIZE], SD_FAST_BUFFER_SIZE);
+
+//this slow buffer is used to buffer data that is about to be written to SD. The reason it's this big is because SD card write speed fluctuated a lot and 
+// sometimes it pauses for a few hundred ms. So to avoid lost data, I have to buffer it into a big enoigh buffer.
+//The data is written to the sd card by the sd_write_task, in chunks of SD_WRITE_BLOCK_SIZE.
+static constexpr size_t SD_SLOW_BUFFER_SIZE = 3 * 1024 * 1024;
 Circular_Buffer s_sd_slow_buffer((uint8_t*)heap_caps_malloc(SD_SLOW_BUFFER_SIZE, MALLOC_CAP_SPIRAM), SD_SLOW_BUFFER_SIZE);
+
+//Cannot write to SD directly from the slow, SPIRAM buffer as that causes the write speed to plummet. So instead I read from the slow buffer into
+// this RAM block and write from it directly. This results in several MB/s write speed performance which is good enough.
+static constexpr size_t SD_WRITE_BLOCK_SIZE = 16384;
 
 static bool init_spi(spi_host_device_t slot)
 {
@@ -504,9 +514,7 @@ static FILE* open_sd_file()
 //this will write data from the slow queue to file
 static void sd_write_proc(void*)
 {
-    static constexpr size_t BLOCK_SIZE = 32768;
-
-    uint8_t* block = new uint8_t[BLOCK_SIZE];
+    uint8_t* block = new uint8_t[SD_WRITE_BLOCK_SIZE];
 
     while (true)
     {
@@ -550,20 +558,20 @@ static void sd_write_proc(void*)
                 }
 
                 xSemaphoreTake(s_sd_slow_buffer_mux, portMAX_DELAY);
-                bool read = s_sd_slow_buffer.read(block, BLOCK_SIZE);
+                bool read = s_sd_slow_buffer.read(block, SD_WRITE_BLOCK_SIZE);
                 xSemaphoreGive(s_sd_slow_buffer_mux);
                 if (!read)
                     break; //not enough data, wait
 
-                if (fwrite(block, BLOCK_SIZE, 1, f) == 0)
+                if (fwrite(block, SD_WRITE_BLOCK_SIZE, 1, f) == 0)
                 {
                     LOG("Error while writing! Stopping session\n");
                     done = true;
                     error = true;
                     break;
                 }
-                s_stats.sd_data += BLOCK_SIZE;
-                s_sd_file_size += BLOCK_SIZE;
+                s_stats.sd_data += SD_WRITE_BLOCK_SIZE;
+                s_sd_file_size += SD_WRITE_BLOCK_SIZE;
                 if (s_sd_file_size > 500 * 1024 * 1024)
                 {
                     LOG("Max file size reached: %d. Restarting session\n", s_sd_file_size);
@@ -1313,19 +1321,19 @@ IRAM_ATTR static void camera_data_available(const void* data, size_t stride, siz
     xSemaphoreGive(s_fec_encoder_mux);
 }
 
-IRAM_ATTR static void camera_proc(void* )
-{
-    while (true)
-    {
-        //NOTE: this only pumps the camera internal queues. The data is processed as it arrives in the camera_data_available callback.
-        //This should be eliminated as it doesn't serve any purpose but I didn't want to change too much the esp_camera component, as it's quite complex
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (!fb) 
-            LOG("Camera capture failed\n");
-        else 
-            esp_camera_fb_return(fb);
-    }
-}
+// IRAM_ATTR static void camera_proc(void* )
+// {
+//     while (true)
+//     {
+//         //NOTE: this only pumps the camera internal queues. The data is processed as it arrives in the camera_data_available callback.
+//         //This should be eliminated as it doesn't serve any purpose but I didn't want to change too much the esp_camera component, as it's quite complex
+//         camera_fb_t* fb = esp_camera_fb_get();
+//         if (!fb) 
+//             LOG("Camera capture failed\n");
+//         else 
+//             esp_camera_fb_return(fb);
+//     }
+// }
 
 static void init_camera()
 {
@@ -1479,12 +1487,15 @@ extern "C" void app_main()
         if (res != pdPASS)
             LOG("Failed sd enqueue task: %d\n", res);
     }
+/*    
     {
         int core = tskNO_AFFINITY;
         BaseType_t res = xTaskCreatePinnedToCore(&camera_proc, "Camera", 1024, nullptr, 1, &s_camera_task, core);
         if (res != pdPASS)
             LOG("Failed wifi rx task: %d\n", res);
     }
+*/
+    esp_camera_fb_get(); //this will start the camera capture
 
     printf("MEMORY Before Loop: \n");
     heap_caps_print_heap_info(MALLOC_CAP_8BIT);
