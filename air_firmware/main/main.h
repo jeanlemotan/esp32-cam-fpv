@@ -5,8 +5,8 @@
 
 /////////////////////////////////////////////////////////////////////////
 
-constexpr size_t WLAN_INCOMING_BUFFER_SIZE = 10000;
-constexpr size_t WLAN_OUTGOING_BUFFER_SIZE = 70000;
+constexpr size_t WLAN_INCOMING_BUFFER_SIZE = 1024;
+constexpr size_t WLAN_OUTGOING_BUFFER_SIZE = 32768;
 
 ////////////////////////////////////////////////////////////////////////////////////
 
@@ -18,6 +18,8 @@ struct Stats
     uint16_t wlan_received_packets_dropped = 0;
     uint32_t video_data = 0;
     uint16_t video_frames = 0;
+    uint32_t sd_data = 0;
+    uint32_t sd_drops = 0;
 };
 
 extern Stats s_stats;

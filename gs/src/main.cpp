@@ -356,6 +356,8 @@ int run()
                 ImGui::Checkbox("V", &config.camera.vflip);
                 ImGui::SameLine();
                 ImGui::Checkbox("Raw", &config.camera.raw_gma);
+                ImGui::SameLine();
+                ImGui::Checkbox("Record", &config.dvr_record);
             }
             if (ImGui::Button("Exit"))
                 abort();
@@ -459,6 +461,7 @@ int main(int argc, const char* argv[])
         return result;
     }
 */
+
     init_crc8_table();
 
     s_hal.reset(new PI_HAL());
@@ -477,6 +480,11 @@ int main(int argc, const char* argv[])
     tx_descriptor.interface = "wlan1";
     if (!s_comms.init(rx_descriptor, tx_descriptor))
         return -1;
+
+    for (const auto& itf: rx_descriptor.interfaces)
+    {
+        system(fmt::format("iwconfig {} channel 11", itf).c_str());
+    }
 
     int result = run();
 

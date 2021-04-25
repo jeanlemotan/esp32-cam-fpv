@@ -382,8 +382,8 @@ void Comms::prepare_tx_packet_header(uint8_t* buffer)
     memcpy(pu8, RADIOTAP_HEADER.data(), RADIOTAP_HEADER.size());
     pu8 += RADIOTAP_HEADER.size();
 
-    memcpy(pu8, s_wlan_ieee_header_ground2air, sizeof(s_wlan_ieee_header_ground2air));
-    pu8 += sizeof(s_wlan_ieee_header_ground2air);
+    memcpy(pu8, WLAN_IEEE_HEADER_GROUND2AIR, sizeof(WLAN_IEEE_HEADER_GROUND2AIR));
+    pu8 += sizeof(WLAN_IEEE_HEADER_GROUND2AIR);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -707,8 +707,8 @@ bool Comms::init(RX_Descriptor const& rx_descriptor, TX_Descriptor const& tx_des
     //    IEEE_HEADER[DST_MAC_LASTBYTE] = 0;
 
     prepare_radiotap_header(DEFAULT_RATE_HZ);
-    m_impl->tx_packet_header_length = RADIOTAP_HEADER.size() + sizeof(s_wlan_ieee_header_ground2air);
-    LOGI("Radiocap header size: {}, IEEE header size: {}", RADIOTAP_HEADER.size(), sizeof(s_wlan_ieee_header_ground2air));
+    m_impl->tx_packet_header_length = RADIOTAP_HEADER.size() + sizeof(WLAN_IEEE_HEADER_GROUND2AIR);
+    LOGI("Radiocap header size: {}, IEEE header size: {}", RADIOTAP_HEADER.size(), sizeof(WLAN_IEEE_HEADER_GROUND2AIR));
 
     /////////////////////
     //calculate some offsets and sizes

@@ -57,18 +57,8 @@ struct Ground2Air_Header
     uint8_t crc = 0;
 };
 
-static constexpr size_t PWM_MAX_CHANNEL_COUNT = 16;
-using PWM_Channels = std::array<uint16_t, PWM_MAX_CHANNEL_COUNT>;
-
 struct Ground2Air_Data_Packet : Ground2Air_Header
 {
-    uint8_t channel_count = 8;
-    PWM_Channels channels;
-    bool ppm_is_inverted = true;
-    uint32_t ppm_frame_length_us = 27000;
-    uint32_t ppm_min_channel_pulse_us = 600;
-    uint32_t ppm_max_channel_pulse_us = 1600;
-    uint32_t ppm_gap_pulse_us = 400;
 };
 static_assert(sizeof(Ground2Air_Data_Packet) <= GROUND2AIR_DATA_MAX_SIZE, "");
 
@@ -92,6 +82,7 @@ struct Ground2Air_Config_Packet : Ground2Air_Header
     uint8_t fec_codec_k = 4;
     uint8_t fec_codec_n = 7;
     uint16_t fec_codec_mtu = AIR2GROUND_MTU;
+    bool dvr_record = false;
 
     struct Camera
     {
