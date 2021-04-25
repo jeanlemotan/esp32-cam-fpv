@@ -342,21 +342,31 @@ int run()
                 config.camera.quality = value;
             }
             {
-                int value = config.camera.saturation;
-                ImGui::SliderInt("Saturation", &value, -2, 2);
-                config.camera.saturation = value;
+                int value = config.camera.gainceiling;
+                ImGui::SliderInt("Gain", &value, 0, 6);
+                config.camera.gainceiling = (uint8_t)value;
             }
             {
-                ImGui::Checkbox("LC", &config.camera.lenc);
-                ImGui::SameLine();
-                ImGui::Checkbox("DCW", &config.camera.dcw);
-                ImGui::SameLine();
-                ImGui::Checkbox("H", &config.camera.hmirror);
-                ImGui::SameLine();
-                ImGui::Checkbox("V", &config.camera.vflip);
-                ImGui::SameLine();
-                ImGui::Checkbox("Raw", &config.camera.raw_gma);
-                ImGui::SameLine();
+                int value = config.camera.sharpness;
+                ImGui::SliderInt("Sharpness", &value, -1, 6);
+                config.camera.sharpness = (int8_t)value;
+            }
+            {
+                int value = config.camera.denoise;
+                ImGui::SliderInt("Denoise", &value, 0, 0xFF);
+                config.camera.denoise = (int8_t)value;
+            }
+            {
+                //ImGui::Checkbox("LC", &config.camera.lenc);
+                //ImGui::SameLine();
+                //ImGui::Checkbox("DCW", &config.camera.dcw);
+                //ImGui::SameLine();
+                //ImGui::Checkbox("H", &config.camera.hmirror);
+                //ImGui::SameLine();
+                //ImGui::Checkbox("V", &config.camera.vflip);
+                //ImGui::SameLine();
+                //ImGui::Checkbox("Raw", &config.camera.raw_gma);
+                //ImGui::SameLine();
                 ImGui::Checkbox("Record", &config.dvr_record);
             }
             if (ImGui::Button("Exit"))

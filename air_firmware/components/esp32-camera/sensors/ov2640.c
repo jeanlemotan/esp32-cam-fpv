@@ -257,6 +257,7 @@ static int set_brightness(sensor_t *sensor, int level)
     }
     sensor->status.brightness = level-3;
     for (int i=0; i<5; i++) {
+        //WRITE_REG_OR_RETURN(bank, reg, val)
         WRITE_REG_OR_RETURN(BANK_DSP, brightness_regs[0][i], brightness_regs[level][i]);
     }
     return ret;
@@ -442,15 +443,99 @@ static int set_wpc_dsp(sensor_t *sensor, int enable)
     return set_reg_bits(sensor, BANK_DSP, CTRL3, 6, 1, enable?1:0);
 }
 
-//unsupported
+const static uint8_t OV2640_SHARPNESS_AUTO[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0x20,   0x20,   
+};   
+   
+const static uint8_t OV2640_SHARPNESS_MANUAL[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0x00,   0x20,   
+};   
+   
+const static uint8_t OV2640_SHARPNESS_LEVEL0[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xc0,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL1[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xc1,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL2[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xc2,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL3[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xc4,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL4[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xc8,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL5[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xd0,   0x1f,   
+};   
+const static uint8_t OV2640_SHARPNESS_LEVEL6[]=   
+{   
+    0x92,   0x01,   0xff,   
+    0x93,   0xdf,   0x1f,   
+};   
+   
+const static uint8_t* OV_SETTING_SHARPNESS[]=   
+{   
+    OV2640_SHARPNESS_LEVEL0,   
+    OV2640_SHARPNESS_LEVEL1,   
+    OV2640_SHARPNESS_LEVEL2,   
+    OV2640_SHARPNESS_LEVEL3,   
+    OV2640_SHARPNESS_LEVEL4,   
+    OV2640_SHARPNESS_LEVEL5,   
+    OV2640_SHARPNESS_LEVEL6   
+};   
+
+static int write_regs_table(sensor_t *sensor, const uint8_t* regs, int count)
+{
+    int ret=0;
+    for (int i = 0; i < count; i++) {
+        SET_REG_BITS_OR_RETURN(BANK_DSP, regs[i*3], 0, regs[i*3 + 2], regs[i*3 + 1]);
+    }
+    return ret;
+}
+
 static int set_sharpness(sensor_t *sensor, int level)
 {
-   return -1;
+    if (level > 6) {
+        return -1;   
+    }
+
+    if (level < 0) {
+        write_regs_table(sensor, OV2640_SHARPNESS_AUTO, 2);
+    } else {   
+        write_regs_table(sensor, OV2640_SHARPNESS_MANUAL, 2);
+        write_regs_table(sensor, OV_SETTING_SHARPNESS[level], 2);
+    }   
+
+    sensor->status.sharpness = level;
+    return -1;
 }
 
 static int set_denoise(sensor_t *sensor, int level)
 {
-   return -1;
+    if (level > 0) {
+        //https://github.com/espressif/esp32-camera/issues/203
+        sensor->status.denoise = level;
+        return write_reg(sensor, BANK_DSP, 0x42, level); //image quality (lower is bad)
+    }
+    return 0;
 }
 
 static int get_reg(sensor_t *sensor, int reg, int mask)
@@ -530,8 +615,8 @@ static int init_status(sensor_t *sensor){
     sensor->status.dcw = get_reg_bits(sensor, BANK_DSP, CTRL2, 5, 1);
     sensor->status.colorbar = get_reg_bits(sensor, BANK_SENSOR, COM7, 1, 1);
 
-    sensor->status.sharpness = 0;//not supported
-    sensor->status.denoise = 0;
+    sensor->status.sharpness = -1;
+    sensor->status.denoise = 0;//not supported
     return 0;
 }
 
@@ -570,8 +655,8 @@ int ov2640_init(sensor_t *sensor)
     sensor->set_raw_gma = set_raw_gma_dsp;
     sensor->set_lenc = set_lenc_dsp;
 
-    //not supported
     sensor->set_sharpness = set_sharpness;
+    //not supported
     sensor->set_denoise = set_denoise;
 
     sensor->get_reg = get_reg;

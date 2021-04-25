@@ -1359,7 +1359,7 @@ static void init_camera()
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
     config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 8;
+    config.jpeg_quality = 4;
     config.fb_count = 3;
 
     // camera init
