@@ -23,6 +23,8 @@
 static const char* TAG = "ov2640";
 #endif
 
+static int set_reg(sensor_t *sensor, int reg, int mask, int value);
+
 static volatile ov2640_bank_t reg_bank = BANK_MAX;
 static int set_bank(sensor_t *sensor, ov2640_bank_t bank)
 {
@@ -274,6 +276,13 @@ static int set_saturation(sensor_t *sensor, int level)
     for (int i=0; i<5; i++) {
         WRITE_REG_OR_RETURN(BANK_DSP, saturation_regs[0][i], saturation_regs[level][i]);
     }
+
+    if (level == 3)
+    {
+        set_reg(sensor, 0xff, 0xff, 0x00);//banksel
+        set_reg(sensor, 0x96, 0xff, 0x10);//bit 4, disable saturation
+    }
+
     return ret;
 }
 
@@ -533,7 +542,7 @@ static int set_denoise(sensor_t *sensor, int level)
     if (level > 0) {
         //https://github.com/espressif/esp32-camera/issues/203
         sensor->status.denoise = level;
-        return write_reg(sensor, BANK_DSP, 0x42, level); //image quality (lower is bad)
+        //return write_reg(sensor, BANK_DSP, 0x42, level); //image quality (lower is bad)
     }
     return 0;
 }

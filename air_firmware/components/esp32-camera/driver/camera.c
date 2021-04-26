@@ -93,8 +93,6 @@ typedef struct camera_fb_s {
     size_t height;
     pixformat_t format;
     //struct timeval timestamp;
-    size_t size;
-    uint8_t ref;
     uint8_t bad;
     struct camera_fb_s * next;
 } camera_fb_int_t;
@@ -110,7 +108,7 @@ typedef struct {
     sensor_t sensor;
 
     camera_fb_int_t *fb;
-    size_t fb_size;
+    //size_t fb_size;
     size_t data_size;
 
     size_t width;
@@ -133,7 +131,6 @@ typedef struct {
     intr_handle_t i2s_intr_handle;
     QueueHandle_t data_ready;
 
-    SemaphoreHandle_t frame_ready;
     TaskHandle_t dma_filter_task;
 } camera_state_t;
 
@@ -231,13 +228,11 @@ static void camera_fb_deinit()
 
 static esp_err_t camera_fb_init(size_t count)
 {
-    if(!count) {
+    if(count <= 1) {
         return ESP_ERR_INVALID_ARG;
     }
 
     camera_fb_deinit();
-
-    ESP_LOGI(TAG, "Allocating %u frame buffers (%d KB total)", count, (s_state->fb_size * count) / 1024);
 
     camera_fb_int_t * _fb = NULL, * _fb1 = NULL, * _fb2 = NULL;
     for(size_t i = 0; i < count; i++) {
@@ -246,22 +241,7 @@ static esp_err_t camera_fb_init(size_t count)
             goto fail;
         }
         memset(_fb2, 0, sizeof(camera_fb_int_t));
-        _fb2->size = s_state->fb_size;
-        /*
-        _fb2->buf = (uint8_t*) calloc(_fb2->size, 1);
-        if(!_fb2->buf) {
-            ESP_LOGI(TAG, "Allocating %d KB frame buffer in PSRAM", s_state->fb_size/1024);
-            _fb2->buf = (uint8_t*) heap_caps_calloc(_fb2->size, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        } else {
-            ESP_LOGI(TAG, "Allocating %d KB frame buffer in OnBoard RAM", s_state->fb_size/1024);
-        }
-        if(!_fb2->buf) {
-            free(_fb2);
-            ESP_LOGE(TAG, "Allocating %d KB frame buffer Failed", s_state->fb_size/1024);
-            goto fail;
-        }
-        memset(_fb2->buf, 0, _fb2->size);
-        */
+        //_fb2->size = s_state->fb_size;
         _fb2->next = _fb;
         _fb = _fb2;
         if(!i) {
@@ -490,16 +470,7 @@ static int i2s_run()
     }
 
     // wait for frame
-    camera_fb_int_t * fb = s_state->fb;
-    while(s_state->config.fb_count > 1) {
-        while(s_state->fb->ref && s_state->fb->next != fb) {
-            s_state->fb = s_state->fb->next;
-        }
-        if(s_state->fb->ref == 0) {
-            break;
-        }
-        vTaskDelay(1);
-    }
+    //camera_fb_int_t * fb = s_state->fb;
 
     //todo: wait for vsync
     ESP_LOGV(TAG, "Waiting for negative edge on VSYNC");
@@ -526,11 +497,7 @@ static void IRAM_ATTR i2s_stop_bus()
 
 static void IRAM_ATTR i2s_stop(bool* need_yield)
 {
-    if(s_state->config.fb_count == 1 && !s_state->fb->bad) {
-        i2s_stop_bus();
-    } else {
-        s_state->dma_received_count = 0;
-    }
+    s_state->dma_received_count = 0;
 
     size_t val = SIZE_MAX;
     BaseType_t higher_priority_task_woken;
@@ -545,7 +512,7 @@ static void IRAM_ATTR signal_dma_buf_received(bool* need_yield, bool last)
     size_t dma_desc_filled = s_state->dma_desc_cur;
     s_state->dma_desc_cur = (dma_desc_filled + 1) % s_state->dma_desc_count;
     s_state->dma_received_count++;
-    if(!s_state->fb->ref && s_state->fb->bad){
+    if(s_state->fb->bad){
         *need_yield = false;
         return;
     }
@@ -554,9 +521,7 @@ static void IRAM_ATTR signal_dma_buf_received(bool* need_yield, bool last)
         dma_desc_filled |= 0x80000000;
     BaseType_t ret = xQueueSendFromISR(s_state->data_ready, &dma_desc_filled, &higher_priority_task_woken);
     if (ret != pdTRUE) {
-        if(!s_state->fb->ref) {
-            s_state->fb->bad = 1;
-        }
+        s_state->fb->bad = 1;
         //ESP_EARLY_LOGW(TAG, "qsf:%d", s_state->dma_received_count);
         //ets_printf("qsf:%d\n", s_state->dma_received_count);
         //ets_printf("qovf\n");
@@ -588,23 +553,19 @@ static void IRAM_ATTR vsync_isr(void* arg)
         if(s_state->dma_received_count > 0) {
             signal_dma_buf_received(&need_yield, true);
             //ets_printf("end_vsync\n");
-            if(s_state->dma_filtered_count > 1 || s_state->fb->bad || s_state->config.fb_count > 1) {
-                i2s_stop(&need_yield);
-            }
+            i2s_stop(&need_yield);
             //ets_printf("vs\n");
         }
-        if(s_state->config.fb_count > 1 || s_state->dma_filtered_count < 2) {
-            I2S0.conf.rx_start = 0;
-            I2S0.in_link.start = 0;
-            I2S0.int_clr.val = I2S0.int_raw.val;
-            i2s_conf_reset();
-            s_state->dma_desc_cur = (s_state->dma_desc_cur + 1) % s_state->dma_desc_count;
-            //I2S0.rx_eof_num = s_state->dma_sample_count;
-            I2S0.in_link.addr = (uint32_t) &s_state->dma_desc[s_state->dma_desc_cur];
-            I2S0.in_link.start = 1;
-            I2S0.conf.rx_start = 1;
-            s_state->dma_received_count = 0;
-        }
+        I2S0.conf.rx_start = 0;
+        I2S0.in_link.start = 0;
+        I2S0.int_clr.val = I2S0.int_raw.val;
+        i2s_conf_reset();
+        s_state->dma_desc_cur = (s_state->dma_desc_cur + 1) % s_state->dma_desc_count;
+        //I2S0.rx_eof_num = s_state->dma_sample_count;
+        I2S0.in_link.addr = (uint32_t) &s_state->dma_desc[s_state->dma_desc_cur];
+        I2S0.in_link.start = 1;
+        I2S0.conf.rx_start = 1;
+        s_state->dma_received_count = 0;
     }
     if (need_yield) {
         portYIELD_FROM_ISR();
@@ -613,65 +574,30 @@ static void IRAM_ATTR vsync_isr(void* arg)
 
 static void IRAM_ATTR camera_fb_done()
 {
-    camera_fb_int_t * fb = NULL;//, * fb2 = NULL;
-    //BaseType_t taskAwoken = 0;
-
-    if(s_state->config.fb_count == 1) {
-        xSemaphoreGive(s_state->frame_ready);
-        return;
-    }
-
-    fb = s_state->fb;
-
     //advance frame buffer only if the current one has data
     if(s_state->fb->len) {
         s_state->fb = s_state->fb->next;
     }
-    //try to find the next free frame buffer
-    while(s_state->fb->ref && s_state->fb->next != fb) {
-        s_state->fb = s_state->fb->next;
-    }
-    //is the found frame buffer free?
-    if(!s_state->fb->ref) {
-        //buffer found. make sure it's empty
-        s_state->fb->len = 0;
-        //*((uint32_t *)s_state->fb->buf) = 0;
-    } else {
-        //stay at the previous buffer
-        s_state->fb = fb;
-    }
+    //buffer found. make sure it's empty
+    s_state->fb->len = 0;
 }
 
 static void IRAM_ATTR dma_finish_frame()
 {
     size_t buf_len = s_state->width * s_state->fb_bytes_per_pixel / s_state->dma_per_line;
 
-    if(!s_state->fb->ref) {
-        // is the frame bad?
-        if(s_state->fb->bad){
-            s_state->fb->bad = 0;
-            s_state->fb->len = 0;
-            //*((uint32_t *)s_state->fb->buf) = 0;
-            if(s_state->config.fb_count == 1) {
-                i2s_start_bus();
-            }
-            //ets_printf("bad\n");
-        } else {
-            s_state->fb->len = s_state->dma_filtered_count * buf_len;
-            if(s_state->fb->len) {
-                //send out the frame
-                s_cb(NULL, 0, 0, true);
-                camera_fb_done();
-            } else if(s_state->config.fb_count == 1){
-                //frame was empty?
-                i2s_start_bus();
-            } else {
-                //ets_printf("empty\n");
-            }
+    // is the frame bad?
+    if(s_state->fb->bad){
+        s_state->fb->bad = 0;
+        s_state->fb->len = 0;
+        //ets_printf("bad\n");
+    } else {
+        s_state->fb->len = s_state->dma_filtered_count * buf_len;
+        if(s_state->fb->len) {
+            //send out the frame
+            s_cb(NULL, 0, 0, true);
+            camera_fb_done();
         }
-    } else if(s_state->fb->len) {
-        s_cb(NULL, 0, 0, true);
-        camera_fb_done();
     }
     s_state->dma_filtered_count = 0;
 }
@@ -679,18 +605,18 @@ static void IRAM_ATTR dma_finish_frame()
 static void IRAM_ATTR dma_filter_buffer(size_t buf_idx, bool last)
 {
     //no need to process the data if frame is in use or is bad
-    if(s_state->fb->ref || s_state->fb->bad) {
+    if(s_state->fb->bad) {
         return;
     }
 
     //check if there is enough space in the frame buffer for the new data
     size_t buf_len = s_state->width * s_state->fb_bytes_per_pixel / s_state->dma_per_line;
-    size_t fb_pos = s_state->dma_filtered_count * buf_len;
-    if(fb_pos > s_state->fb_size - buf_len) {
-        //size_t processed = s_state->dma_received_count * buf_len;
-        //ets_printf("[%s:%u] ovf pos: %u, processed: %u\n", __FUNCTION__, __LINE__, fb_pos, processed);
-        return;
-    }
+    //size_t fb_pos = s_state->dma_filtered_count * buf_len;
+    // if(fb_pos > s_state->fb_size - buf_len) {
+    //     //size_t processed = s_state->dma_received_count * buf_len;
+    //     //ets_printf("[%s:%u] ovf pos: %u, processed: %u\n", __FUNCTION__, __LINE__, fb_pos, processed);
+    //     return;
+    // }
 
     if (!s_state->dma_filtered_count) {
         s_cb(NULL, 0, 0, false); //start frame
@@ -963,7 +889,7 @@ esp_err_t camera_init(const camera_config_t* config)
     s_state->height = resolution[frame_size].height;
 
     if (pix_format == PIXFORMAT_GRAYSCALE) {
-        s_state->fb_size = s_state->width * s_state->height;
+        //s_state->fb_size = s_state->width * s_state->height;
         if (s_state->sensor.id.PID == OV3660_PID || s_state->sensor.id.PID == OV5640_PID || s_state->sensor.id.PID == NT99141_PID) {
             if (is_hs_mode()) {
                 s_state->sampling_mode = SM_0A00_0B00;
@@ -981,7 +907,7 @@ esp_err_t camera_init(const camera_config_t* config)
         }
         s_state->fb_bytes_per_pixel = 1;       // frame buffer stores Y8
     } else if (pix_format == PIXFORMAT_YUV422 || pix_format == PIXFORMAT_RGB565) {
-            s_state->fb_size = s_state->width * s_state->height * 2;
+            //s_state->fb_size = s_state->width * s_state->height * 2;
             if (is_hs_mode() && s_state->sensor.id.PID != OV7725_PID) {
                 if(s_state->sensor.id.PID == OV7670_PID) {
                     s_state->sampling_mode = SM_0A0B_0B0C;
@@ -994,7 +920,7 @@ esp_err_t camera_init(const camera_config_t* config)
             s_state->in_bytes_per_pixel = 2;       // camera sends YU/YV
             s_state->fb_bytes_per_pixel = 2;       // frame buffer stores YU/YV/RGB565
     } else if (pix_format == PIXFORMAT_RGB888) {
-        s_state->fb_size = s_state->width * s_state->height * 3;
+        //s_state->fb_size = s_state->width * s_state->height * 3;
         if (is_hs_mode()) {
             if(s_state->sensor.id.PID == OV7670_PID) {
                 s_state->sampling_mode = SM_0A0B_0B0C;
@@ -1012,19 +938,10 @@ esp_err_t camera_init(const camera_config_t* config)
             err = ESP_ERR_NOT_SUPPORTED;
             goto fail;
         }
-        int qp = config->jpeg_quality;
-        int compression_ratio_bound = 1;
-        if (qp > 10) {
-            compression_ratio_bound = 16;
-        } else if (qp > 5) {
-            compression_ratio_bound = 10;
-        } else {
-            compression_ratio_bound = 4;
-        }
-        (*s_state->sensor.set_quality)(&s_state->sensor, qp);
+        (*s_state->sensor.set_quality)(&s_state->sensor, config->jpeg_quality);
         s_state->in_bytes_per_pixel = 2;
         s_state->fb_bytes_per_pixel = 2;
-        s_state->fb_size = (s_state->width * s_state->height * s_state->fb_bytes_per_pixel) / compression_ratio_bound;
+        //s_state->fb_size = (s_state->width * s_state->height * s_state->fb_bytes_per_pixel) / compression_ratio_bound;
         s_state->sampling_mode = SM_0A00_0B00;
     } else {
         ESP_LOGE(TAG, "Requested format is not supported");
@@ -1032,9 +949,9 @@ esp_err_t camera_init(const camera_config_t* config)
         goto fail;
     }
 
-    ESP_LOGD(TAG, "in_bpp: %d, fb_bpp: %d, fb_size: %d, mode: %d, width: %d height: %d",
+    ESP_LOGD(TAG, "in_bpp: %d, fb_bpp: %d, mode: %d, width: %d height: %d",
              s_state->in_bytes_per_pixel, s_state->fb_bytes_per_pixel,
-             s_state->fb_size, s_state->sampling_mode,
+             s_state->sampling_mode,
              s_state->width, s_state->height);
 
     i2s_init();
@@ -1052,21 +969,11 @@ esp_err_t camera_init(const camera_config_t* config)
         goto fail;
     }
 
-    s_state->data_ready = xQueueCreate(16, sizeof(size_t));
+    s_state->data_ready = xQueueCreate(32, sizeof(size_t));
     if (s_state->data_ready == NULL) {
         ESP_LOGE(TAG, "Failed to dma queue");
         err = ESP_ERR_NO_MEM;
         goto fail;
-    }
-
-    if(s_state->config.fb_count == 1) {
-        s_state->frame_ready = xSemaphoreCreateBinary();
-        if (s_state->frame_ready == NULL) {
-            ESP_LOGE(TAG, "Failed to create semaphore");
-            err = ESP_ERR_NO_MEM;
-            goto fail;
-        }
-    } else {
     }
 
     //ToDo: core affinity?
@@ -1112,7 +1019,7 @@ esp_err_t camera_init(const camera_config_t* config)
 
     if (s_state->sensor.id.PID == OV2640_PID) {
         s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
-        s_state->sensor.set_bpc(&s_state->sensor, false);
+        s_state->sensor.set_bpc(&s_state->sensor, true);
         s_state->sensor.set_wpc(&s_state->sensor, true);
         s_state->sensor.set_lenc(&s_state->sensor, true);
     }
@@ -1192,9 +1099,6 @@ esp_err_t esp_camera_deinit()
     if (s_state->data_ready) {
         vQueueDelete(s_state->data_ready);
     }
-    if (s_state->frame_ready) {
-        vSemaphoreDelete(s_state->frame_ready);
-    }
     gpio_isr_handler_remove(s_state->config.pin_vsync);
     if (s_state->i2s_intr_handle) {
         esp_intr_disable(s_state->i2s_intr_handle);
@@ -1220,21 +1124,10 @@ camera_fb_t* esp_camera_fb_get()
         return NULL;
     }
     if(!I2S0.conf.rx_start) {
-        if(s_state->config.fb_count > 1) {
-            ESP_LOGD(TAG, "i2s_run");
-        }
+        ESP_LOGD(TAG, "i2s_run");
         if (i2s_run() != 0) {
             return NULL;
         }
-    }
-    bool need_yield = false;
-    if (s_state->config.fb_count == 1) {
-        if (xSemaphoreTake(s_state->frame_ready, FB_GET_TIMEOUT) != pdTRUE){
-            i2s_stop(&need_yield);
-            ESP_LOGE(TAG, "Failed to get the frame on time!");
-            return NULL;
-        }
-        return (camera_fb_t*)s_state->fb;
     }
     return NULL;
 }
@@ -1247,90 +1140,3 @@ sensor_t * esp_camera_sensor_get()
     return &s_state->sensor;
 }
 
-esp_err_t esp_camera_save_to_nvs(const char *key) 
-{
-#if ESP_IDF_VERSION_MAJOR > 3
-    nvs_handle_t handle;
-#else
-    nvs_handle handle;
-#endif
-    esp_err_t ret = nvs_open(key,NVS_READWRITE,&handle);
-    
-    if (ret == ESP_OK) {
-        sensor_t *s = esp_camera_sensor_get();
-        if (s != NULL) {
-            ret = nvs_set_blob(handle,CAMERA_SENSOR_NVS_KEY,&s->status,sizeof(camera_status_t));
-            if (ret == ESP_OK) {
-                uint8_t pf = s->pixformat;
-                ret = nvs_set_u8(handle,CAMERA_PIXFORMAT_NVS_KEY,pf);
-            }
-            return ret;
-        } else {
-            return ESP_ERR_CAMERA_NOT_DETECTED; 
-        }
-        nvs_close(handle);
-        return ret;
-    } else {
-        return ret;
-    }
-}
-
-esp_err_t esp_camera_load_from_nvs(const char *key) 
-{
-#if ESP_IDF_VERSION_MAJOR > 3
-    nvs_handle_t handle;
-#else
-    nvs_handle handle;
-#endif
-  uint8_t pf;
-
-  esp_err_t ret = nvs_open(key,NVS_READWRITE,&handle);
-  
-  if (ret == ESP_OK) {
-      sensor_t *s = esp_camera_sensor_get();
-      camera_status_t st;
-      if (s != NULL) {
-        size_t size = sizeof(camera_status_t);
-        ret = nvs_get_blob(handle,CAMERA_SENSOR_NVS_KEY,&st,&size);
-        if (ret == ESP_OK) {
-            s->set_ae_level(s,st.ae_level);
-            s->set_aec2(s,st.aec2);
-            s->set_aec_value(s,st.aec_value);
-            s->set_agc_gain(s,st.agc_gain);
-            s->set_awb_gain(s,st.awb_gain);
-            s->set_bpc(s,st.bpc);
-            s->set_brightness(s,st.brightness);
-            s->set_colorbar(s,st.colorbar);
-            s->set_contrast(s,st.contrast);
-            s->set_dcw(s,st.dcw);
-            s->set_denoise(s,st.denoise);
-            s->set_exposure_ctrl(s,st.aec);
-            s->set_framesize(s,st.framesize);
-            s->set_gain_ctrl(s,st.agc);          
-            s->set_gainceiling(s,st.gainceiling);
-            s->set_hmirror(s,st.hmirror);
-            s->set_lenc(s,st.lenc);
-            s->set_quality(s,st.quality);
-            s->set_raw_gma(s,st.raw_gma);
-            s->set_saturation(s,st.saturation);
-            s->set_sharpness(s,st.sharpness);
-            s->set_special_effect(s,st.special_effect);
-            s->set_vflip(s,st.vflip);
-            s->set_wb_mode(s,st.wb_mode);
-            s->set_whitebal(s,st.awb);
-            s->set_wpc(s,st.wpc);
-        }  
-        ret = nvs_get_u8(handle,CAMERA_PIXFORMAT_NVS_KEY,&pf);
-        if (ret == ESP_OK) {
-          s->set_pixformat(s,pf);
-        }
-      } else {
-          return ESP_ERR_CAMERA_NOT_DETECTED;
-      }
-      nvs_close(handle);
-      return ret;
-  } else {
-      ESP_LOGW(TAG,"Error (%d) opening nvs key \"%s\"",ret,key);
-      return ret;
-  }
-}

@@ -165,8 +165,6 @@ static TaskHandle_t s_wifi_rx_task = nullptr;
 
 /////////////////////////////////////////////////////////////////////////
 
-static TaskHandle_t s_camera_task = nullptr;
-//uint8_t* s_camera_frame_data = (uint8_t*)malloc(MTU - sizeof(Air_Video_Packet));
 static size_t s_video_frame_data_size = 0;
 static uint32_t s_video_frame_index = 0;
 static uint8_t s_video_part_index = 0;
@@ -366,14 +364,13 @@ Fec_Codec s_fec_decoder;
 static TaskHandle_t s_sd_write_task = nullptr;
 static TaskHandle_t s_sd_enqueue_task = nullptr;
 static bool s_sd_initialized = false;
-static bool s_spi_initialized = false;
 static size_t s_sd_file_size = 0;
 static uint32_t s_sd_next_session_id = 0;
 static uint32_t s_sd_next_segment_id = 0;
 
 //the fast buffer is RAM and used to transfer data quickly from the camera callback to the slow, SPIRAM buffer. 
 //Writing directly to the SPIRAM buffer is too slow in the camera callback and causes lost frames, so I use this RAM buffer and a separate task (sd_enqueue_task) for that.
-static constexpr size_t SD_FAST_BUFFER_SIZE = 28000;
+static constexpr size_t SD_FAST_BUFFER_SIZE = 10000;
 Circular_Buffer s_sd_fast_buffer(new uint8_t[SD_FAST_BUFFER_SIZE], SD_FAST_BUFFER_SIZE);
 
 //this slow buffer is used to buffer data that is about to be written to SD. The reason it's this big is because SD card write speed fluctuated a lot and 
@@ -384,27 +381,7 @@ Circular_Buffer s_sd_slow_buffer((uint8_t*)heap_caps_malloc(SD_SLOW_BUFFER_SIZE,
 
 //Cannot write to SD directly from the slow, SPIRAM buffer as that causes the write speed to plummet. So instead I read from the slow buffer into
 // this RAM block and write from it directly. This results in several MB/s write speed performance which is good enough.
-static constexpr size_t SD_WRITE_BLOCK_SIZE = 16384;
-
-static bool init_spi(spi_host_device_t slot)
-{
-    spi_bus_config_t bus_cfg; 
-    bus_cfg.mosi_io_num = GPIO_NUM_15;
-    bus_cfg.miso_io_num = GPIO_NUM_2;
-    bus_cfg.sclk_io_num = GPIO_NUM_14;
-    bus_cfg.quadwp_io_num = -1;
-    bus_cfg.quadhd_io_num = -1;
-    bus_cfg.max_transfer_sz = 4096;
-    bus_cfg.flags = 0;
-    bus_cfg.intr_flags = 0;
-    esp_err_t ret = spi_bus_initialize(slot, &bus_cfg, 1);
-    if (ret != ESP_OK) 
-    {
-        LOG("Failed to initialize spi bus.\n");
-        return false;
-    }
-    return true;
-}
+static constexpr size_t SD_WRITE_BLOCK_SIZE = 8192;
 
 static void shutdown_sd()
 {
@@ -994,6 +971,7 @@ IRAM_ATTR static void wifi_tx_proc(void *)
             {
                 memcpy(packet.ptr, WLAN_IEEE_HEADER_AIR2GROUND, WLAN_IEEE_HEADER_SIZE);
 
+                size_t spins = 0;
                 while (packet.ptr)
                 {
 #ifdef TX_COMPLETION_CB                    
@@ -1016,10 +994,9 @@ IRAM_ATTR static void wifi_tx_proc(void *)
                     }
                     else
                     {
-                        //this error can happen if we push too much data and the TX is out of buffers
-                        //LOG("WLAN inject error: %d\n", res); 
-                        s_stats.wlan_error_count++;
-                        vTaskDelay(1);
+                        spins++;
+                        if (spins > 10000)
+                            vTaskDelay(1);
                     }
                 }
             }
@@ -1267,15 +1244,19 @@ IRAM_ATTR static void camera_data_available(const void* data, size_t stride, siz
                 count -= c;
                 s_video_frame_data_size += c;
 
-                size_t c4 = c >> 2;
-                for (size_t i = c4; i > 0; i--)
+                size_t c8 = c >> 3;
+                for (size_t i = c8; i > 0; i--)
                 {
                     *ptr++ = *src; src += stride;
                     *ptr++ = *src; src += stride;
                     *ptr++ = *src; src += stride;
                     *ptr++ = *src; src += stride;
+                    *ptr++ = *src; src += stride;
+                    *ptr++ = *src; src += stride;
+                    *ptr++ = *src; src += stride;
+                    *ptr++ = *src; src += stride;
                 }
-                for (size_t i = c - (c4 << 2); i > 0; i--)
+                for (size_t i = c - (c8 << 3); i > 0; i--)
                 {
                     *ptr++ = *src; src += stride;
                 }
@@ -1372,6 +1353,7 @@ static void init_camera()
 
     sensor_t *s = esp_camera_sensor_get();
     s->set_framesize(s, FRAMESIZE_SVGA);
+    s->set_saturation(s, 0);
 }
 
 //#define SHOW_CPU_USAGE
@@ -1487,14 +1469,6 @@ extern "C" void app_main()
         if (res != pdPASS)
             LOG("Failed sd enqueue task: %d\n", res);
     }
-/*    
-    {
-        int core = tskNO_AFFINITY;
-        BaseType_t res = xTaskCreatePinnedToCore(&camera_proc, "Camera", 1024, nullptr, 1, &s_camera_task, core);
-        if (res != pdPASS)
-            LOG("Failed wifi rx task: %d\n", res);
-    }
-*/
     esp_camera_fb_get(); //this will start the camera capture
 
     printf("MEMORY Before Loop: \n");
