@@ -102,11 +102,11 @@ static void comms_thread_proc()
             last_stats_tp = Clock::now();
         }
 
-        if (Clock::now() - last_comms_sent_tp >= std::chrono::milliseconds(100))
+        if (Clock::now() - last_comms_sent_tp >= std::chrono::milliseconds(500))
         {
             std::lock_guard<std::mutex> lg(s_ground2air_config_packet_mutex);
             auto& config = s_ground2air_config_packet;
-            config.ping = last_sent_ping;
+            config.ping = last_sent_ping; 
             config.type = Ground2Air_Header::Type::Config;
             config.size = sizeof(config);
             config.crc = 0;
@@ -178,7 +178,7 @@ static void comms_thread_proc()
                 (air2ground_video_packet.frame_index > video_frame_index)) //frame from the future and we still have other frames enqueued? Stale data
             {
                 //if (video_next_part_index > 0) //incomplete frame
-                //   s_decoder.decode_data(video_frame.data(), video_frame.size(), get_resolution(air2ground_video_packet.resolution));
+                //   s_decoder.decode_data(video_frame.data(), video_frame.size());
 
                 //if (video_next_part_index > 0)
                 //    LOGE("Aborting video frame {}, {}", video_frame_index, video_next_part_index);
@@ -267,7 +267,11 @@ int run()
     s_comms_thread = std::thread(&comms_thread_proc);
 
     Ground2Air_Config_Packet config;
-    config.wifi_rate = WIFI_Rate::RATE_G_18M_ODFM;
+    config.wifi_rate = WIFI_Rate::RATE_G_54M_ODFM;//RATE_G_18M_ODFM;
+
+    config.camera.resolution = (Resolution)0;
+    config.camera.fps_limit = 0;
+    config.camera.quality = 63;
 
     size_t video_frame_count = 0;
     float video_fps = 0;
@@ -372,70 +376,6 @@ int run()
             if (ImGui::Button("Exit"))
                 abort();
 
-            // if (now - last_comms_history_tp >= std::chrono::milliseconds(100))
-            // {
-            //     last_comms_history_tp = now;
-            //     silk::Comms::Stats stats = hal.get_comms().get_stats();
-            //     tx_rssi_history.push_back(stats.tx_rssi);
-            //     while (tx_rssi_history.size() > 10 * 5) { tx_rssi_history.erase(tx_rssi_history.begin()); }
-            //     rx_rssi_history.push_back(stats.rx_rssi);
-            //     while (rx_rssi_history.size() > 10 * 5) { rx_rssi_history.erase(rx_rssi_history.begin()); }
-            //     packets_dropped_history.push_back(stats.packets_dropped_per_second);
-            //     while (packets_dropped_history.size() > 10 * 5) { packets_dropped_history.erase(packets_dropped_history.begin()); }
-            //     packets_received_history.push_back(stats.packets_received_per_second);
-            //     while (packets_received_history.size() > 10 * 5) { packets_received_history.erase(packets_received_history.begin()); }
-            //     packets_sent_history.push_back(stats.packets_sent_per_second);
-            //     while (packets_sent_history.size() > 10 * 5) { packets_sent_history.erase(packets_sent_history.begin()); }
-            // }
-            // if (!tx_rssi_history.empty())
-            // {
-            //     ImGui::Text("TX = %ddBm", (int)tx_rssi_history.back());
-            //     ImGui::PlotLines("History",
-            //                      tx_rssi_history.data(), tx_rssi_history.size(),
-            //                      0, NULL,
-            //                      -128.f, 128.f,
-            //                      ImVec2(0, display_size.y / 20));
-            // }
-            // if (!rx_rssi_history.empty())
-            // {
-            //     ImGui::Text("RX = %ddBm", (int)rx_rssi_history.back());
-            //     ImGui::PlotLines("History",
-            //                      rx_rssi_history.data(), rx_rssi_history.size(),
-            //                      0, NULL,
-            //                      -128.f, 128.f,
-            //                      ImVec2(0, display_size.y / 20));
-            // }
-            // if (!packets_dropped_history.empty())
-            // {
-            //     ImGui::Text("Dropped = %.2f", packets_dropped_history.back());
-            //     auto minmax = std::minmax_element(packets_dropped_history.begin(), packets_dropped_history.end());
-            //     ImGui::PlotLines("History",
-            //                      packets_dropped_history.data(), packets_dropped_history.size(),
-            //                      0, NULL,
-            //                      *minmax.first, *minmax.second,
-            //                      ImVec2(0, display_size.y / 20));
-            // }
-            // if (!packets_received_history.empty())
-            // {
-            //     ImGui::Text("Received = %.2f", packets_received_history.back());
-            //     auto minmax = std::minmax_element(packets_received_history.begin(), packets_received_history.end());
-            //     ImGui::PlotLines("History",
-            //                      packets_received_history.data(), packets_received_history.size(),
-            //                      0, NULL,
-            //                      *minmax.first, *minmax.second,
-            //                      ImVec2(0, display_size.y / 20));
-            // }
-            // if (!packets_sent_history.empty())
-            // {
-            //     ImGui::Text("Sent = %.2f", packets_sent_history.back());
-            //     auto minmax = std::minmax_element(packets_sent_history.begin(), packets_sent_history.end());
-            //     ImGui::PlotLines("History",
-            //                      packets_sent_history.data(), packets_sent_history.size(),
-            //                      0, NULL,
-            //                      *minmax.first, *minmax.second,
-            //                      ImVec2(0, display_size.y / 20));
-            // }
-
             ImGui::Text("%.3f ms/frame (%.1f FPS) %.1f VFPS", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate, video_fps);
         }
         ImGui::End();
@@ -448,14 +388,6 @@ int run()
             std::lock_guard<std::mutex> lg(s_ground2air_config_packet_mutex);
             s_ground2air_config_packet = config;
         }
-
-        // {
-        //     int res = read(STDIN_FILENO, tx_data.data(), s_mtu);
-        //     if (res > 0)
-        //     {
-        //         phy.send_data(tx_data.data(), res);
-        //     }
-        // }
     }
 
     return 0;
@@ -463,15 +395,6 @@ int run()
 
 int main(int argc, const char* argv[])
 {
-    /*
-    int result = parse_arguments(argc, argv);
-    if (result < 0)
-    {
-        show_help();
-        return result;
-    }
-*/
-
     init_crc8_table();
 
     s_hal.reset(new PI_HAL());

@@ -22,7 +22,7 @@ extern "C"
 #include <GLES3/gl3ext.h>
 }
 
-#define CHECK_GL_ERRORS
+//#define CHECK_GL_ERRORS
 
 #if defined(CHECK_GL_ERRORS)
 #define GLCHK(X) \
@@ -41,7 +41,7 @@ do { \
 } while (0)
 #else
 #define GLCHK(X) X
-#define EGLCHK()
+#define SDLCHK(X) X
 #endif
 
 struct Input
@@ -52,7 +52,8 @@ using Input_ptr = Pool<Input>::Ptr;
 
 struct Output
 {
-    std::vector<uint32_t> pbos;
+    uint32_t pbo;
+    size_t pbo_size = 0;
     std::vector<uint32_t> textures;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -63,7 +64,7 @@ using Output_ptr = Pool<Output>::Ptr;
 struct Video_Decoder::Impl
 {
     SDL_Window* window = nullptr;
-    SDL_GLContext context;
+    std::vector<SDL_GLContext> contexts;
     std::vector<std::thread> threads;
 
     Pool<Input> input_pool;
@@ -112,35 +113,18 @@ bool Video_Decoder::init(IHAL& hal)
 
     m_impl->window = (SDL_Window*)hal.get_window();
     assert(m_impl->window != nullptr);
-    m_impl->context = SDL_GL_CreateContext(m_impl->window);
-    assert(m_impl->context != nullptr);
 
     m_impl->output_pool.on_acquire = [this](Output& output) 
     {
-        if (output.textures.empty())
-        {
-            //m_hal->lock_main_context();
-            output.pbos.resize(3);
-            GLCHK(glGenBuffers(output.pbos.size(), output.pbos.data()));
-
-            output.textures.resize(3);
-            GLCHK(glGenTextures(output.textures.size(), output.textures.data()));
-            for (auto& t: output.textures)
-            {
-                GLCHK(glBindTexture(GL_TEXTURE_2D, t));
-                GLCHK(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-                GLCHK(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-                GLCHK(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-                GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-                GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-                LOGI("Texture: {}", t);
-            }
-            //m_hal->unlock_main_context();
-        }
     };
 
-    for (size_t i = 0; i < 2; i++)
-        m_impl->threads.push_back(std::thread([this]() { decoder_thread_proc(); }));
+    for (size_t i = 0; i < 4; i++)
+    {
+        SDL_GLContext context = SDL_GL_CreateContext(m_impl->window);
+        assert(context != nullptr);
+        m_impl->contexts.push_back(context);
+        m_impl->threads.push_back(std::thread([this, i]() { decoder_thread_proc(i); }));
+    }
 
     return true;
 }
@@ -173,10 +157,10 @@ bool Video_Decoder::decode_data(void const* data, size_t size)
     return true;
 }
 
-void Video_Decoder::decoder_thread_proc()
+void Video_Decoder::decoder_thread_proc(size_t thread_index)
 {
     LOGI("SDL window: {}", (size_t)m_impl->window);
-    SDLCHK(SDL_GL_MakeCurrent(m_impl->window, m_impl->context));
+    SDLCHK(SDL_GL_MakeCurrent(m_impl->window, m_impl->contexts[thread_index]));
 
     while (!m_exit)
     {
@@ -202,10 +186,10 @@ void Video_Decoder::decoder_thread_proc()
         size_t size = input->data.size();
 
         //find the end marker for JPEG. Data after that can be discarded
-        const uint8_t* dptr = &data[size - 4];
+        const uint8_t* dptr = &data[size - 2];
         while (dptr > data)
         {
-            if (dptr[0] == 0xFF && dptr[1] == 0xD9 && dptr[2] == 0x00 && dptr[3] == 0x00)
+            if (dptr[0] == 0xFF && dptr[1] == 0xD9)
             {
                 dptr += 2;
                 size = dptr - data;
@@ -306,6 +290,26 @@ size_t Video_Decoder::lock_output()
 
     Output& output = *m_impl->locked_outputs.back();
     
+    if (output.textures.empty())
+    {
+        //m_hal->lock_main_context();
+        GLCHK(glGenBuffers(1, &output.pbo));
+
+        output.textures.resize(3);
+        GLCHK(glGenTextures(output.textures.size(), output.textures.data()));
+        for (auto& t: output.textures)
+        {
+            GLCHK(glBindTexture(GL_TEXTURE_2D, t));
+            GLCHK(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+            GLCHK(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+            GLCHK(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+            GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+            GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+            LOGI("Texture: {}", t);
+        }
+        //m_hal->unlock_main_context();
+    }
+
     //for (size_t i = 0; i < output->pbos.size(); i++)
     {
         //auto& b = output->pbos[i];
@@ -315,18 +319,57 @@ size_t Video_Decoder::lock_output()
     //GLCHK(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
     //GLCHK(glFlush()); //to publish the changes
 //*
+
+    //calculate total size
+    GLCHK(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, output.pbo));
+    size_t pbo_size = 0;
     for (size_t i = 0; i < output.textures.size(); i++)
     {
-        GLCHK(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, output.pbos[i]));
-        GLCHK(glBufferData(GL_PIXEL_UNPACK_BUFFER, output.planes[i].size(), output.planes[i].data(), GL_STREAM_DRAW));
+        pbo_size += output.planes[i].size();
+        size_t align = pbo_size & 0xF;
+        if (align > 0)
+            pbo_size += 0x10 - align;
+    }
+
+    //allocate memory for the pbo
+    //if (output.pbo_size != pbo_size)
+    {
+        GLCHK(glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, nullptr, GL_STREAM_DRAW));
+        output.pbo_size = pbo_size;
+    }
+
+    // map the buffer object into client's memory
+    uint8_t* ptr = (uint8_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, pbo_size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+    if (ptr)
+    {
+        //copy the page into the pbo, aligned to 16 bytes
+        size_t offset = 0;
+        for (size_t i = 0; i < output.textures.size(); i++)
+        {
+            memcpy(ptr + offset, output.planes[i].data(), output.planes[i].size());
+            offset += output.planes[i].size();
+            size_t align = offset & 0xF;
+            if (align > 0)
+                offset += 0x10 - align;
+        }
+        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+    }
+
+    size_t offset = 0;
+    for (size_t i = 0; i < output.textures.size(); i++)
+    {
         GLCHK(glBindTexture(GL_TEXTURE_2D, output.textures[i]));
         uint32_t width = i == 0 ? output.width : output.width / 2;
         uint32_t height = output.height;
-        GLCHK(glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, 0));
+        GLCHK(glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, (void*)offset));
+        offset += output.planes[i].size();
+        size_t align = offset & 0xF;
+        if (align > 0)
+            offset += 0x10 - align;
     }
-    GLCHK(glFlush()); //to publish the changes
-    //GLCHK(glFinish()); //to publish the changes
     GLCHK(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
+    //GLCHK(glFlush()); //to publish the changes
+    GLCHK(glFinish()); //to publish the changes
 //*/    
     std::copy(output.textures.begin(), output.textures.end(), m_textures.begin());
     m_resolution = ImVec2((float)output.width, (float)output.height);

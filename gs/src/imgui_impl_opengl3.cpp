@@ -68,7 +68,7 @@
 
 #include "Log.h"
 
-#define CHECK_GL_ERRORS
+//#define CHECK_GL_ERRORS
 
 #if defined(CHECK_GL_ERRORS)
 #define GLCHK(X) \
@@ -83,7 +83,6 @@ do { \
 while(0)
 #else
 #define GLCHK(X) X
-#define EGLCHK()
 #endif
 
 

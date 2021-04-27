@@ -44,6 +44,26 @@ extern "C"
 
 extern uint8_t s_font_droid_sans[];
 
+/* To install & compile SDL2 with DRM:
+
+--- Install dependencies
+
+sudo apt build-dep libsdl2
+sudo apt install libdrm-dev libgbm-dev
+
+--- Build SDL2:
+git clone SDL2
+cd SDL
+mkdir build
+cd build 
+../configure --disable-video-rpi --enable-video-kmsdrm --enable-video-x11 --disable-video-opengl
+make -j5
+sudo make install
+
+--- Run:
+sudo -E LD_LIBRARY_PATH=/usr/local/lib DISPLAY=:0 ./gs
+*/
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct PI_HAL::Impl
@@ -245,13 +265,20 @@ bool PI_HAL::init_display_sdl()
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0); 
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0); 
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1); 
+
+    int driver_count = SDL_GetNumVideoDrivers();
+    LOGI("Drivers: {}", driver_count);
+    for (int i = 0; i < driver_count; i++)
+    {
+        LOGI("Driver {}: {}", i, SDL_GetVideoDriver(i));
+    }
 
     SDL_DisplayMode mode;
     int res = SDL_GetCurrentDisplayMode(0, &mode);
@@ -259,6 +286,7 @@ bool PI_HAL::init_display_sdl()
 
 	m_impl->width = mode.w;
 	m_impl->height = mode.h;
+    LOGI("Mode {}: {}x{}", res, mode.w, mode.h);
 
     // Create an application window with the following settings:
     m_impl->window = SDL_CreateWindow(
@@ -267,19 +295,24 @@ bool PI_HAL::init_display_sdl()
         SDL_WINDOWPOS_UNDEFINED,           // initial y position
         m_impl->width,                               // width, in pixels
         m_impl->height,                               // height, in pixels
-        SDL_WINDOW_FULLSCREEN | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN
+        SDL_WINDOW_FULLSCREEN | 
+        SDL_WINDOW_OPENGL | 
+        SDL_WINDOW_SHOWN | 
+        SDL_WINDOW_BORDERLESS
     );
 
     // Check that the window was successfully created
     if (m_impl->window == nullptr) 
     {
         // In the case that the window could not be made...
-        LOGW("Cannot create window: {}", SDL_GetError());
+        LOGE("Cannot create window: {}", SDL_GetError());
         return false;
     }
 
     m_impl->context = SDL_GL_CreateContext(m_impl->window);
-    SDL_GL_MakeCurrent(m_impl->window, m_impl->context);
+    int err = SDL_GL_MakeCurrent(m_impl->window, m_impl->context);
+    if (err != 0) 
+        LOGE("Failed to create context: {}", err);
 
     ImGui::CreateContext();
     ImGui_ImplSDL2_InitForOpenGL(m_impl->window, m_impl->context);
@@ -396,11 +429,8 @@ bool PI_HAL::update_display()
         }
     }
 
-#ifdef USE_BOUBLE_BUFFER
     SDL_GL_SwapWindow(m_impl->window);
-#else
-    glFlush();
-#endif
+    //glFlush();
 
     ImGui_ImplSDL2_NewFrame(m_impl->window);
 #else

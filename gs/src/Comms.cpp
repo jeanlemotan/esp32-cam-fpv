@@ -92,6 +92,7 @@ struct Comms::PCap
     int rx_pcap_selectable_fd = 0;
 
     size_t _80211_header_length = 0;
+    size_t index = 0;
 };
 
 struct Comms::TX
@@ -136,13 +137,14 @@ struct Comms::TX
 
 struct Comms::RX
 {
-    std::thread thread;
+    std::vector<std::thread> threads;
 
     fec_t* fec = nullptr;
     std::array<uint8_t const*, 16> fec_src_packet_ptrs;
     std::array<uint8_t*, 32> fec_dst_packet_ptrs;
 
     std::vector<PCap*> pcaps;
+    std::vector<uint32_t> pcal_last_block_index;
 
     size_t transport_packet_size = 0;
     size_t streaming_packet_size = 0;
@@ -248,8 +250,9 @@ Comms::~Comms()
 
     m_impl->tx.packet_queue_cv.notify_all();
 
-    if (m_impl->rx.thread.joinable())
-        m_impl->rx.thread.join();
+    for (auto& thread: m_impl->rx.threads)
+        if (thread.joinable())
+            thread.join();
 
     if (m_impl->tx.thread.joinable())
         m_impl->tx.thread.join();
@@ -489,6 +492,10 @@ bool Comms::process_rx_packet(PCap& pcap)
             }
 
             std::lock_guard<std::mutex> lg(rx.block_queue_mutex);
+
+            //keep track of what interface returned what index. 
+            //this should allow us to skip stale blocks sooner
+            rx.pcal_last_block_index[pcap.index] = block_index;
 
             if (block_index < rx.next_block_index)
             {
@@ -783,21 +790,24 @@ bool Comms::init(RX_Descriptor const& rx_descriptor, TX_Descriptor const& tx_des
         interfaces.insert(i);
     interfaces.insert(m_tx_descriptor.interface);
 
+    m_impl->rx.pcal_last_block_index.resize(interfaces.size());
     m_impl->rx.pcaps.resize(interfaces.size());
     m_impl->pcaps.resize(interfaces.size());
     size_t index = 0;
-    for (auto& i: interfaces)
+    for (auto& interf: interfaces)
     {
         m_impl->pcaps[index] = std::make_unique<PCap>();
-        if (!prepare_pcap(i, *m_impl->pcaps[index]))
+        if (!prepare_pcap(interf, *m_impl->pcaps[index]))
             return false;
 
-        if (m_tx_descriptor.interface == i)
+        m_impl->pcaps[index]->index = index;
+
+        if (m_tx_descriptor.interface == interf)
             m_impl->tx.pcap = m_impl->pcaps[index].get();
 
         for (size_t j = 0; j < m_rx_descriptor.interfaces.size(); j++)
         {
-            if (m_rx_descriptor.interfaces[j] == i)
+            if (m_rx_descriptor.interfaces[j] == interf)
             {
                 m_impl->rx.pcaps[j] = m_impl->pcaps[index].get();
                 break;
@@ -807,7 +817,8 @@ bool Comms::init(RX_Descriptor const& rx_descriptor, TX_Descriptor const& tx_des
     }
 
     m_impl->tx.thread = std::thread([this]() { tx_thread_proc(); });
-    m_impl->rx.thread = std::thread([this]() { rx_thread_proc(); });
+    for (size_t i = 0; i < m_rx_descriptor.interfaces.size(); i++)
+        m_impl->rx.threads.push_back(std::thread([this, i]() { rx_thread_proc(i); }));
 
 #if defined RASPBERRY_PI_XXX
     {
@@ -829,9 +840,10 @@ bool Comms::init(RX_Descriptor const& rx_descriptor, TX_Descriptor const& tx_des
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-void Comms::rx_thread_proc()
+void Comms::rx_thread_proc(size_t index)
 {
     RX& rx = m_impl->rx;
+    PCap& pcap = *rx.pcaps[index];
 
     while (!m_exit)
     {
@@ -842,18 +854,11 @@ void Comms::rx_thread_proc()
         to.tv_usec = 30000;
 
         FD_ZERO(&readset);
-        for (size_t i = 0; i < m_rx_descriptor.interfaces.size(); i++)
-            FD_SET(rx.pcaps[i]->rx_pcap_selectable_fd, &readset);
+        FD_SET(pcap.rx_pcap_selectable_fd, &readset);
 
         int n = select(30, &readset, nullptr, nullptr, &to);
-        if (n != 0)
-        {
-            for (size_t i = 0; i < m_rx_descriptor.interfaces.size(); i++)
-            {
-                if (FD_ISSET(rx.pcaps[i]->rx_pcap_selectable_fd, &readset))
-                    process_rx_packet(*rx.pcaps[i]);
-            }
-        }
+        if (n != 0 && FD_ISSET(pcap.rx_pcap_selectable_fd, &readset))
+            process_rx_packet(pcap);
     }
 }
 
@@ -1093,7 +1098,7 @@ void Comms::process_rx_packets()
     uint32_t coding_k = m_rx_descriptor.coding_k;
     uint32_t coding_n = m_rx_descriptor.coding_n;
 
-    std::lock_guard<std::mutex> lg(rx.block_queue_mutex);
+    std::unique_lock<std::mutex> lg(rx.block_queue_mutex);
 
     if (Clock::now() - rx.last_packet_tp > m_rx_descriptor.reset_duration)
         rx.next_block_index = 0;
@@ -1127,6 +1132,14 @@ void Comms::process_rx_packets()
         //entire block received
         if (block->packets.size() >= coding_k)
         {
+            //sanity check - this should not happen
+            for (size_t i = 0; i < block->packets.size(); i++)
+            {
+                RX::Packet_ptr const& d = block->packets[i];
+                if (!d->is_processed)
+                    LOGI("Skipping {}!!!", block->index * coding_k + d->index);
+            }
+
             rx.last_block_tp = Clock::now();
             rx.next_block_index = block->index + 1;
             rx.block_queue.pop_front();
@@ -1170,7 +1183,9 @@ void Comms::process_rx_packets()
                 }
             }
 
+            lg.unlock(); //not need to hold the mutex locked - give the rx_proc a chance to get its data in
             fec_decode(rx.fec, rx.fec_src_packet_ptrs.data(), rx.fec_dst_packet_ptrs.data(), indices.data(), rx.payload_size);
+            lg.lock(); //relock the mutex
 
             //now dispatch them
             for (size_t i = 0; i < block->packets.size(); i++)
@@ -1197,9 +1212,21 @@ void Comms::process_rx_packets()
             continue; //next packet
         }
 
+        //calculate what is the earliest block index received
+        uint32_t earliest_block_index = std::numeric_limits<uint32_t>::max();
+        for (uint32_t index: rx.pcal_last_block_index)
+            earliest_block_index = std::min(earliest_block_index, index);
+
         //skip if too much buffering
-        if (rx.block_queue.size() > 3)
+        bool skipped_blocks = false;
+        while ((rx.block_queue.size() > 0 && rx.block_queue.front()->index < earliest_block_index) || //if all interfaces received blocks bigger that the first in the queue
+            rx.block_queue.size() > 3) //or if queueing too much
         {
+            // if (rx.block_queue.front()->index < earliest_block_index)ˇ
+            //     LOGI("Skipping stale packet: fast");
+            // else
+            //     LOGI("Skipping stale packet: slow");
+
             for (size_t i = 0; i < block->packets.size(); i++)
             {
                 RX::Packet_ptr const& d = block->packets[i];
@@ -1208,10 +1235,12 @@ void Comms::process_rx_packets()
             }
             rx.next_block_index = block->index + 1;
             rx.block_queue.pop_front();
+            skipped_blocks = true;
         }
 
-        //crt packet is not complete, stop until we get more packets
-        break;
+        //nothing else to do - we cannot complete nor skip blocks - so wait for more data
+        if (!skipped_blocks)
+            break;
     }
 }
 

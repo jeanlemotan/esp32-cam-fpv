@@ -24,7 +24,7 @@ public:
     struct Impl;
 
 private:
-    void decoder_thread_proc();
+    void decoder_thread_proc(size_t thread_index);
 
     IHAL* m_hal = nullptr;
     bool m_exit = false;

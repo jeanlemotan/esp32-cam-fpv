@@ -60,7 +60,7 @@ private:
     void process_rx_packets();
 
     void tx_thread_proc();
-    void rx_thread_proc();
+    void rx_thread_proc(size_t index);
 
     TX_Descriptor m_tx_descriptor;
     RX_Descriptor m_rx_descriptor;
