@@ -43,7 +43,7 @@ https://user-images.githubusercontent.com/10252034/116135308-43c08c00-a6d1-11eb-
 - Only the Ai Thinker esp cam board tested
 - In the air_firmware, execute this: `idf.py -p /dev/tty.usbserial1 flash monitor`. Replace `tty.usbserial1` with your serial port.
 - Make sure you place the board in flashing mode bu connecting IO0 to GND and resetting the board.
-- After compiling and resetting, you should get some stats per second, smth like this in the console:
+- After compiling and resetting, you should get some stats per second, smth like this in the console:\
 `WLAN S: 695196, R: 350, E: 0, D: 0, % : 0 || FPS: 64, D: 401268 || D: 0, E: 0`\
 `WLAN S: 761616, R: 420, E: 0, D: 0, % : 0 || FPS: 69, D: 443679 || D: 0, E: 0`\
 `WLAN S: 763092, R: 420, E: 0, D: 0, % : 0 || FPS: 69, D: 449410 || D: 0, E: 0`\
