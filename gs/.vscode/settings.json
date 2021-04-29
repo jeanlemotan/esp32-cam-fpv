@@ -70,6 +70,7 @@
         "utility": "cpp",
         "__tree": "cpp",
         "map": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "condition_variable": "cpp"
     }
 }

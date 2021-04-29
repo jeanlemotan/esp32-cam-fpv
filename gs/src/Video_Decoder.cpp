@@ -12,40 +12,19 @@
 #include "Pool.h"
 #include "IHAL.h"
 #include <SDL2/SDL.h>
-
+#include "main.h"
 
 extern "C"
 {
-//#include <jpeglib.h>
+#include "pigpio.h"
 #include <turbojpeg.h>
 #include <GLES3/gl3.h>
 #include <GLES3/gl3ext.h>
 }
 
-//#define CHECK_GL_ERRORS
-
-#if defined(CHECK_GL_ERRORS)
-#define GLCHK(X) \
-do { \
-    GLenum err = GL_NO_ERROR; \
-    X; \
-   while ((err = glGetError())) \
-   { \
-      LOGE("GL error {} in " #X "file {} line {}", err, __FILE__,__LINE__); \
-   } \
-} while(0)
-#define SDLCHK(X) \
-do { \
-    int err = X; \
-    if (err != 0) LOGE("SDL error {} in " #X "file {} line {}", err, __FILE__,__LINE__); \
-} while (0)
-#else
-#define GLCHK(X) X
-#define SDLCHK(X) X
-#endif
-
 struct Input
 {
+    int32_t test_value = -1;
     std::vector<uint8_t> data;
 };
 using Input_ptr = Pool<Input>::Ptr;
@@ -118,7 +97,11 @@ bool Video_Decoder::init(IHAL& hal)
     {
     };
 
+#ifdef TEST_DISPLAY_LATENCY
+    for (size_t i = 0; i < 1; i++)
+#else
     for (size_t i = 0; i < 4; i++)
+#endif
     {
         SDL_GLContext context = SDL_GL_CreateContext(m_impl->window);
         assert(context != nullptr);
@@ -157,6 +140,21 @@ bool Video_Decoder::decode_data(void const* data, size_t size)
     return true;
 }
 
+void Video_Decoder::inject_test_data(uint32_t value)
+{
+    Input_ptr input = m_impl->input_pool.acquire();
+    input->test_value = value;
+
+    {
+        std::unique_lock<std::mutex> lg(m_impl->input_queue_mutex);
+        m_impl->input_queue.push_back(input);
+    }
+
+    m_impl->input_queue_cv.notify_all();
+}
+
+Clock::time_point s_start = Clock::now();
+
 void Video_Decoder::decoder_thread_proc(size_t thread_index)
 {
     LOGI("SDL window: {}", (size_t)m_impl->window);
@@ -181,7 +179,31 @@ void Video_Decoder::decoder_thread_proc(size_t thread_index)
             else
                 continue;
         }
+#ifdef TEST_DISPLAY_LATENCY
+        uint32_t width = 800;
+        uint32_t height = 600;
 
+        Output_ptr output = m_impl->output_pool.acquire();
+        output->width = width;
+        output->height = height;
+
+        output->planes[0].resize(tjPlaneSizeYUV(0, width, 0, height, TJSAMP_422));
+        if (input->test_value == 0)
+            memset(output->planes[0].data(), 0, output->planes[0].size());
+        else
+            memset(output->planes[0].data(), 255, output->planes[0].size());
+
+        output->planes[1].resize(tjPlaneSizeYUV(1, width, 0, height, TJSAMP_422));
+        memset(output->planes[1].data(), 128, output->planes[1].size());
+        output->planes[2].resize(tjPlaneSizeYUV(2, width, 0, height, TJSAMP_422));
+        memset(output->planes[2].data(), 128, output->planes[2].size());
+
+        {
+            //LOGI("Enq buffer {}/{} at {}", input->test_value, (size_t)output.get(), std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - s_start).count());
+            std::lock_guard<std::mutex> lg(m_impl->output_queue_mutex);
+            m_impl->output_queue.push_back(std::move(output));
+        }
+#else
         const uint8_t* data = (const uint8_t*)input->data.data();
         size_t size = input->data.size();
 
@@ -272,6 +294,7 @@ void Video_Decoder::decoder_thread_proc(size_t thread_index)
         }
 
         //LOGI("Decompressed in {}us, {}", std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_tp).count(), input->data.size() - size);
+#endif
     }
 }
 
@@ -289,6 +312,8 @@ size_t Video_Decoder::lock_output()
     }
 
     Output& output = *m_impl->locked_outputs.back();
+
+    //LOGI("* Rcv buffer {} at {}", (size_t)&output, std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - s_start).count());
     
     if (output.textures.empty())
     {
@@ -369,7 +394,11 @@ size_t Video_Decoder::lock_output()
     }
     GLCHK(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
     //GLCHK(glFlush()); //to publish the changes
-    GLCHK(glFinish()); //to publish the changes
+    //GLCHK(glFinish()); //to publish the changes
+
+    //GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    //glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ULL);
+
 //*/    
     std::copy(output.textures.begin(), output.textures.end(), m_textures.begin());
     m_resolution = ImVec2((float)output.width, (float)output.height);

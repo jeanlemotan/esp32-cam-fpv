@@ -1,5 +1,7 @@
 #pragma once
 
+#include "structures.h"
+
 #pragma pack(push, 1) // exact fit - no padding
 
 enum class WIFI_Rate : uint8_t
@@ -38,7 +40,7 @@ enum class WIFI_Rate : uint8_t
     /* 29 */ RATE_N_72M_MCS7_S,
 };
 
-static constexpr size_t AIR2GROUND_MTU = 1400;
+static constexpr size_t AIR2GROUND_MTU = WLAN_MAX_PAYLOAD_SIZE - 6; //6 is the fec header size
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -79,8 +81,8 @@ struct Ground2Air_Config_Packet : Ground2Air_Header
     uint8_t ping = 0; //used for latency measurement
     int8_t wifi_power = 20;//dBm
     WIFI_Rate wifi_rate = WIFI_Rate::RATE_G_18M_ODFM;
-    uint8_t fec_codec_k = 4;
-    uint8_t fec_codec_n = 7;
+    uint8_t fec_codec_k = 2;
+    uint8_t fec_codec_n = 3;
     uint16_t fec_codec_mtu = AIR2GROUND_MTU;
     bool dvr_record = false;
 

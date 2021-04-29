@@ -21,7 +21,12 @@
 #include "packets.h"
 #include <thread>
 #include "imgui_impl_opengl3.h"
+#include "main.h"
 
+extern "C"
+{
+#include "pigpio.h"
+}
 
 /*
 
@@ -48,6 +53,11 @@ static std::thread s_comms_thread;
 
 static std::mutex s_ground2air_config_packet_mutex;
 static Ground2Air_Config_Packet s_ground2air_config_packet;
+
+#ifdef TEST_LATENCY
+static uint32_t s_test_latency_gpio_value = 0;
+static Clock::time_point s_test_latency_gpio_last_tp = Clock::now();
+#endif
 
 static void comms_thread_proc()
 {
@@ -116,6 +126,34 @@ static void comms_thread_proc()
             last_ping_sent_tp = Clock::now();
         }
 
+#ifdef TEST_LATENCY
+        if (s_test_latency_gpio_value == 0 && Clock::now() - s_test_latency_gpio_last_tp >= std::chrono::milliseconds(200))
+        {
+            s_test_latency_gpio_value = 1;
+            gpioWrite(17, s_test_latency_gpio_value);
+            s_test_latency_gpio_last_tp = Clock::now();
+#   ifdef TEST_DISPLAY_LATENCY
+            s_decoder.inject_test_data(s_test_latency_gpio_value);
+#   endif
+        }
+        if (s_test_latency_gpio_value != 0 && Clock::now() - s_test_latency_gpio_last_tp >= std::chrono::milliseconds(50))
+        {
+            s_test_latency_gpio_value = 0;
+            gpioWrite(17, s_test_latency_gpio_value);
+            s_test_latency_gpio_last_tp = Clock::now();
+#   ifdef TEST_DISPLAY_LATENCY
+            s_decoder.inject_test_data(s_test_latency_gpio_value);
+#   endif
+        }
+#endif        
+
+#ifdef TEST_DISPLAY_LATENCY
+        std::this_thread::yield();
+
+        //pump the comms to avoid packages accumulating
+        s_comms.process();
+        s_comms.receive(rx_data.data.data(), rx_data.size);
+#else
         //receive new packets
         do
         {
@@ -204,6 +242,7 @@ static void comms_thread_proc()
             }
         } 
         while (false);
+#endif
     }
 }
 
@@ -280,7 +319,31 @@ int run()
     Clock::time_point last_tp = Clock::now();
     while (true)
     {
+        s_decoder.unlock_output();
+        size_t count = s_decoder.lock_output();
+        video_frame_count += count;
+        for (size_t i = 0; i < 3; i++)
+            ImGui_SetVideoTextureChannel(i, s_decoder.get_video_texture_id(i));
+
         s_hal->process();
+        //std::this_thread::yield();
+
+// #ifdef TEST_LATENCY
+//         if (s_test_latency_gpio_value == 0 && Clock::now() - s_test_latency_gpio_last_tp >= std::chrono::milliseconds(400))
+//         {
+//             s_test_latency_gpio_value = 1;
+//             gpioWrite(17, s_test_latency_gpio_value);
+//             s_test_latency_gpio_last_tp = Clock::now();
+//             //s_decoder.inject_test_data(s_test_latency_gpio_value);
+//         }
+//         if (s_test_latency_gpio_value != 0 && Clock::now() - s_test_latency_gpio_last_tp >= std::chrono::milliseconds(100))
+//         {
+//             s_test_latency_gpio_value = 0;
+//             gpioWrite(17, s_test_latency_gpio_value);
+//             s_test_latency_gpio_last_tp = Clock::now();
+//             //s_decoder.inject_test_data(s_test_latency_gpio_value);
+//         }
+// #endif        
 
         if (Clock::now() - last_stats_tp >= std::chrono::milliseconds(1000))
         {
@@ -301,12 +364,13 @@ int run()
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(display_size.x, display_size.y));
         ImGui::SetNextWindowBgAlpha(0);
-        ImGui::Begin("", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs);
-
-        s_decoder.unlock_output();
-        video_frame_count += s_decoder.lock_output();
-        for (size_t i = 0; i < 3; i++)
-            ImGui_SetVideoTextureChannel(i, s_decoder.get_video_texture_id(i));
+        ImGui::Begin("", nullptr, ImGuiWindowFlags_NoTitleBar | 
+                                    ImGuiWindowFlags_NoResize | 
+                                    ImGuiWindowFlags_NoMove | 
+                                    ImGuiWindowFlags_NoScrollbar | 
+                                    ImGuiWindowFlags_NoCollapse | 
+                                    ImGuiWindowFlags_NoSavedSettings | 
+                                    ImGuiWindowFlags_NoInputs);
 
         ImVec2 resolution = s_decoder.get_video_resolution();
         float ar = resolution.x / resolution.y;
@@ -316,8 +380,11 @@ int run()
                      ImVec2(display_size.x / ar, display_size.y),
                      0.f,
                      0.f);
-        //hud.draw();
 
+        // ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        // draw_list->AddRectFilled(ImVec2(0, 0), display_size, s_test_latency_gpio_value == 0 ? 0x0 : 0xFFFFFFFF, 0.0f);
+
+        //hud.draw();
         ImGui::Begin("HAL");
         {
             {
@@ -381,7 +448,6 @@ int run()
         ImGui::End();
 
         ImGui::End();
-        //std::this_thread::sleep_for(std::chrono::microseconds(1));
         ImGui::Render();
 
         {
@@ -401,10 +467,14 @@ int main(int argc, const char* argv[])
     if (!s_hal->init())
         return -1;
 
+#ifdef TEST_LATENCY
+    gpioSetMode(17, PI_OUTPUT);
+#endif
+
     Comms::RX_Descriptor rx_descriptor;
-    rx_descriptor.coding_k = 4;
-    rx_descriptor.coding_n = 7;
-    rx_descriptor.mtu = AIR2GROUND_MTU;
+    rx_descriptor.coding_k = s_ground2air_config_packet.fec_codec_k;
+    rx_descriptor.coding_n = s_ground2air_config_packet.fec_codec_n;
+    rx_descriptor.mtu = s_ground2air_config_packet.fec_codec_mtu;
     rx_descriptor.interfaces = {"wlan1", "wlan2"};
     Comms::TX_Descriptor tx_descriptor;
     tx_descriptor.coding_k = 2;

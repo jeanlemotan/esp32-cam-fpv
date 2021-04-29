@@ -4,7 +4,7 @@
 #define USE_SDL
 //#define USE_MANGA_SCREEN2
 
-#define USE_BOUBLE_BUFFER
+//#define USE_BOUBLE_BUFFER
 
 #include <fstream>
 #include <future>
@@ -39,7 +39,7 @@ extern "C"
 
 extern "C"
 {
-//#include "pigpio.h"
+#include "pigpio.h"
 }
 
 extern uint8_t s_font_droid_sans[];
@@ -102,7 +102,7 @@ struct PI_HAL::Impl
     };
     std::array<Touch, MAX_TOUCHES> touches;
 
-    //bool pigpio_is_isitialized = false;
+    bool pigpio_is_isitialized = false;
     float target_backlight = 1.0f;
     float backlight = 0.0f;
 
@@ -117,38 +117,38 @@ struct PI_HAL::Impl
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-// bool PI_HAL::init_pigpio()
-// {
-//     if (m_impl->pigpio_is_isitialized)
-//         return true;
+bool PI_HAL::init_pigpio()
+{
+    if (m_impl->pigpio_is_isitialized)
+        return true;
 
-//     LOGI("Initializing pigpio");
-//     if (gpioCfgClock(2, PI_CLOCK_PCM, 0) < 0 ||
-//             gpioCfgPermissions(static_cast<uint64_t>(-1)))
-//     {
-//         LOGE("Cannot configure pigpio");
-//         return false;
-//     }
-//     if (gpioInitialise() < 0)
-//     {
-//         LOGE("Cannot init pigpio");
-//         return false;
-//     }
+    LOGI("Initializing pigpio");
+    if (gpioCfgClock(2, PI_CLOCK_PCM, 0) < 0 ||
+            gpioCfgPermissions(static_cast<uint64_t>(-1)))
+    {
+        LOGE("Cannot configure pigpio");
+        return false;
+    }
+    if (gpioInitialise() < 0)
+    {
+        LOGE("Cannot init pigpio");
+        return false;
+    }
 
-//     m_impl->pigpio_is_isitialized = true;
+    m_impl->pigpio_is_isitialized = true;
 
-//     return true;
-// }
+    return true;
+}
 
 // ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// void PI_HAL::shutdown_pigpio()
-// {
-//     if (m_impl->pigpio_is_isitialized)
-//         gpioTerminate();
+void PI_HAL::shutdown_pigpio()
+{
+    if (m_impl->pigpio_is_isitialized)
+        gpioTerminate();
 
-//     m_impl->pigpio_is_isitialized = false;
-// }
+    m_impl->pigpio_is_isitialized = false;
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -253,6 +253,8 @@ bool PI_HAL::init_display_dispmanx()
 
 bool PI_HAL::init_display_sdl()
 {
+    //SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
+
 #ifdef USE_SDL
     SDL_Init(SDL_INIT_VIDEO);
 #ifdef USE_BOUBLE_BUFFER
@@ -265,13 +267,17 @@ bool PI_HAL::init_display_sdl()
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0); 
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8); 
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0); 
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1); 
+
+    SDL_SetHintWithPriority(SDL_HINT_VIDEO_DOUBLE_BUFFER, "1", SDL_HINT_OVERRIDE);
+    //SDL_SetHintWithPriority(SDL_HINT_RENDER_VSYNC, "0", SDL_HINT_OVERRIDE);
+    
 
     int driver_count = SDL_GetNumVideoDrivers();
     LOGI("Drivers: {}", driver_count);
@@ -290,9 +296,9 @@ bool PI_HAL::init_display_sdl()
 
     // Create an application window with the following settings:
     m_impl->window = SDL_CreateWindow(
-        "An SDL2 window",                  // window title
-        SDL_WINDOWPOS_UNDEFINED,           // initial x position
-        SDL_WINDOWPOS_UNDEFINED,           // initial y position
+        "ESP32 FPV",                  // window title
+        0,           // initial x position
+        0,           // initial y position
         m_impl->width,                               // width, in pixels
         m_impl->height,                               // height, in pixels
         SDL_WINDOW_FULLSCREEN | 
@@ -430,6 +436,8 @@ bool PI_HAL::update_display()
     }
 
     SDL_GL_SwapWindow(m_impl->window);
+    //SDL_GL_SwapWindow(m_impl->window);
+    //SDL_GL_SwapWindow(m_impl->window);
     //glFlush();
 
     ImGui_ImplSDL2_NewFrame(m_impl->window);
@@ -580,11 +588,11 @@ bool PI_HAL::init()
     bcm_host_init();
 #endif
 
-    // if (!init_pigpio())
-    // {
-    //     LOGE("Cannot initialize pigpio");
-    //     return false;
-    // }
+    if (!init_pigpio())
+    {
+        LOGE("Cannot initialize pigpio");
+        return false;
+    }
     if (!init_display())
     {
         LOGE("Cannot initialize display");
@@ -614,7 +622,7 @@ void PI_HAL::shutdown()
 {
     ImGui_ImplOpenGL3_Shutdown();
 
-    //shutdown_pigpio();
+    shutdown_pigpio();
     shutdown_ts();
     shutdown_display();
 }

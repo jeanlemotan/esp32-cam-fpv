@@ -12,6 +12,7 @@ public:
     ~Video_Decoder();
 
     bool decode_data(void const* data, size_t size);
+    void inject_test_data(uint32_t value);
 
     bool init(IHAL& hal);
 

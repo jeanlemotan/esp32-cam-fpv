@@ -992,11 +992,21 @@ IRAM_ATTR static void wifi_tx_proc(void *)
                         //xSemaphoreTake(s_wifi_tx_done_semaphore, portMAX_DELAY); //wait for the tx_done notification
 #endif
                     }
-                    else
+                    else if (res == ESP_ERR_NO_MEM) //No TX buffers available, need to poll.
                     {
                         spins++;
-                        if (spins > 10000)
+                        if (spins > 1000)
                             vTaskDelay(1);
+                        else
+                            taskYIELD();
+                    }
+                    else //other errors
+                    {
+                        //LOG("Wlan err: %d\n", res);
+                        s_stats.wlan_error_count++;
+                        xSemaphoreTake(s_wlan_outgoing_mux, portMAX_DELAY);
+                        end_reading_wlan_outgoing_packet(packet);
+                        xSemaphoreGive(s_wlan_outgoing_mux);
                     }
                 }
             }
@@ -1084,9 +1094,9 @@ void setup_wifi()
         xSemaphoreGive(s_fec_encoder_mux);
 
         Fec_Codec::Descriptor descriptor;
-        descriptor.coding_k = 4;
-        descriptor.coding_n = 7;
-        descriptor.mtu = AIR2GROUND_MTU;
+        descriptor.coding_k = s_ground2air_config_packet.fec_codec_k;
+        descriptor.coding_n = s_ground2air_config_packet.fec_codec_n;
+        descriptor.mtu = s_ground2air_config_packet.fec_codec_mtu;
         descriptor.core = Fec_Codec::Core::Any;
         descriptor.priority = 1;
         xSemaphoreTake(s_fec_encoder_mux, portMAX_DELAY);

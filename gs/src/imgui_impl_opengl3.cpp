@@ -67,24 +67,7 @@
 #include <GLES3/gl3ext.h>
 
 #include "Log.h"
-
-//#define CHECK_GL_ERRORS
-
-#if defined(CHECK_GL_ERRORS)
-#define GLCHK(X) \
-do { \
-    GLenum err = GL_NO_ERROR; \
-    X; \
-   while ((err = glGetError())) \
-   { \
-      LOGE("GL error {} in " #X "file {} line {}", err, __FILE__,__LINE__); \
-   } \
-} \
-while(0)
-#else
-#define GLCHK(X) X
-#endif
-
+#include "main.h"
 
 // OpenGL Data
 static char         g_GlslVersionString[32] = "";
