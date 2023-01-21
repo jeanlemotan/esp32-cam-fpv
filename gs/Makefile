@@ -14,8 +14,8 @@ SRCS := src/main.cpp \
 	src/imgui/imgui_draw.cpp \
 	src/imgui/imgui.cpp \
 	src/imgui/misc/freetype/imgui_freetype.cpp \
-	components/common/crc.cpp \
-	components/common/fec.cpp \
+	../components/common/crc.cpp \
+	../components/common/fec.cpp \
 	src/fmt/format.cc \
 	src/fmt/os.cc \
 
@@ -51,7 +51,7 @@ TAR := tar
 INCLUDE  := -Isrc \
 	-Isrc/utils \
 	-Isrc/imgui \
-	-Icomponents/common \
+	-I../components/common \
 	-I/opt/vc/include/ \
 	-I/usr/include/freetype2
 
