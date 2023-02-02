@@ -59,7 +59,7 @@ https://user-images.githubusercontent.com/10252034/116135308-43c08c00-a6d1-11eb-
 	Eventually this should be command line driven.
 - The UI uses ImGui and is touch driven - but mouse should work as well
 - Dependencies:
-	`sudo apt install libdrm-dev libgbm-dev libgles2-mesa-dev libpcap-dev libturbojpeg0-dev libts-dev libsdl2-dev `
+	`sudo apt install libdrm-dev libgbm-dev libgles2-mesa-dev libpcap-dev libturbojpeg0-dev libts-dev libsdl2-dev libfreetype6-dev `
 - In the gs folder, execute `make -j4`
 - Run `sudo -E DISPLAY=:0 ./gs`
 
