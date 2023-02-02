@@ -270,10 +270,10 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data, bool rotate)
                     }
 
                     // Bind texture, Draw
-#if defined(RASPBERRY_PI)
-                    uint32_t texId = (uint32_t)pcmd->TextureId;
-#else
+#if defined(BIT_64)
                     uint64_t texId = (uint64_t)pcmd->TextureId;
+#else
+                    uint32_t texId = (uint32_t)pcmd->TextureId;
 #endif
                     if (texId & 0x80000000)
                     {
