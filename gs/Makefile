@@ -1,8 +1,6 @@
 # output binary
 BIN := gs
 
-ARCH := $(shell getconf LONG_BIT)
-
 SRCS := src/main.cpp \
 	src/droid_sans_font.cpp \
 	src/HUD.cpp \
@@ -73,9 +71,9 @@ CFLAGS := -std=c11
 CXXFLAGS := -std=c++17
 # C/C++ flags
 ifeq ($(shell arch), aarch64)
-CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -mcpu=cortex-a8 -mfpu=neon -Wall -DBIT_$(ARCH) -DRASPBERRY_PI $(INCLUDE)
+CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -mcpu=cortex-a8 -mfpu=neon -Wall -DRASPBERRY_PI $(INCLUDE)
 else
-CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -Wall -DBIT_$(ARCH) $(INCLUDE)
+CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -Wall $(INCLUDE)
 endif
 #CPPFLAGS := -g -Wall -DRASPBERRY_PI $(INCLUDE)
 
