@@ -37,10 +37,12 @@ extern "C"
 }
 #endif
 
+#ifdef TEST_LATENCY
 extern "C"
 {
 #include "pigpio.h"
 }
+#endif
 
 extern uint8_t s_font_droid_sans[];
 
@@ -116,6 +118,7 @@ struct PI_HAL::Impl
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef TEST_LATENCY
 
 bool PI_HAL::init_pigpio()
 {
@@ -149,7 +152,7 @@ void PI_HAL::shutdown_pigpio()
 
     m_impl->pigpio_is_isitialized = false;
 }
-
+#endif
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool PI_HAL::init_display_dispmanx()
@@ -588,11 +591,14 @@ bool PI_HAL::init()
     bcm_host_init();
 #endif
 
+#ifdef TEST_LATENCY
     if (!init_pigpio())
     {
         LOGE("Cannot initialize pigpio");
         return false;
     }
+#endif
+
     if (!init_display())
     {
         LOGE("Cannot initialize display");
@@ -622,7 +628,10 @@ void PI_HAL::shutdown()
 {
     ImGui_ImplOpenGL3_Shutdown();
 
+#ifdef TEST_LATENCY
     shutdown_pigpio();
+#endif
+
     shutdown_ts();
     shutdown_display();
 }

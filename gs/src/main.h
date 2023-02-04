@@ -3,7 +3,11 @@
 
 //When enabled, it will output a 4Hz pulse (50ms ON, 200ms OFF) on GPIO 17. This can be used to blink a LED pointing inside the camera.
 //This is used with a photodiode on the screen to measure with an oscilloscope the delay between the GPIO 17 pulse and the pixels on screen
-#define TEST_LATENCY
+#if defined(RASPBERRY_PI)
+	#define TEST_LATENCY
+#else
+	//#define TEST_LATENCY
+#endif
 
 //When enabled (together with TEST_LATENCY), it will output a 4Hz pulse (50ms ON, 200ms OFF) on GPIO 17. 
 //On top of this, together with the on/off pulse it will send a white/black frame to the decoding thread.
