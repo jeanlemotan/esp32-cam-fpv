@@ -684,6 +684,7 @@ esp_err_t set_wifi_fixed_rate(WIFI_Rate value)
         WIFI_PHY_RATE_MCS4_LGI,
         WIFI_PHY_RATE_MCS4_SGI,
         WIFI_PHY_RATE_MCS5_LGI,
+
         WIFI_PHY_RATE_MCS5_SGI,
         WIFI_PHY_RATE_MCS6_LGI,
         WIFI_PHY_RATE_MCS6_SGI,
@@ -1002,7 +1003,7 @@ IRAM_ATTR static void wifi_tx_proc(void *)
                     }
                     else //other errors
                     {
-                        //LOG("Wlan err: %d\n", res);
+                       // LOG("Wlan err: %d\n", res);
                         s_stats.wlan_error_count++;
                         xSemaphoreTake(s_wlan_outgoing_mux, portMAX_DELAY);
                         end_reading_wlan_outgoing_packet(packet);
