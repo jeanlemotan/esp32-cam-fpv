@@ -270,7 +270,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data, bool rotate)
                     }
 
                     // Bind texture, Draw
-                    uint32_t texId = (uint32_t)pcmd->TextureId;
+                    intptr_t texId = (intptr_t)pcmd->TextureId;
                     if (texId & 0x80000000)
                     {
                         prev_texId = -1;

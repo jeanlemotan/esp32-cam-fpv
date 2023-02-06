@@ -16,7 +16,10 @@
 
 extern "C"
 {
+#ifdef TEST_LATENCY
 #include "pigpio.h"
+#endif
+
 #include <turbojpeg.h>
 #include <GLES3/gl3.h>
 #include <GLES3/gl3ext.h>

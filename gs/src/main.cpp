@@ -23,11 +23,12 @@
 #include "imgui_impl_opengl3.h"
 #include "main.h"
 
+#ifdef TEST_LATENCY
 extern "C"
 {
 #include "pigpio.h"
 }
-
+#endif
 /*
 
 Changed on the PI:

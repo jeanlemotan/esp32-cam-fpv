@@ -14,8 +14,8 @@ SRCS := src/main.cpp \
 	src/imgui/imgui_draw.cpp \
 	src/imgui/imgui.cpp \
 	src/imgui/misc/freetype/imgui_freetype.cpp \
-	components/common/crc.cpp \
-	components/common/fec.cpp \
+	../components/common/crc.cpp \
+	../components/common/fec.cpp \
 	src/fmt/format.cc \
 	src/fmt/os.cc \
 
@@ -48,12 +48,21 @@ LD := g++
 # tar
 TAR := tar
 
+ifeq ($(shell arch), aarch64)
 INCLUDE  := -Isrc \
 	-Isrc/utils \
 	-Isrc/imgui \
-	-Icomponents/common \
+	-I../components/common \
 	-I/opt/vc/include/ \
 	-I/usr/include/freetype2
+else
+INCLUDE  := -Isrc \
+	-Isrc/utils \
+	-Isrc/imgui \
+	-I../components/common \
+	-I/usr/include/ \
+	-I/usr/include/freetype2
+endif
 
 # C flags
 CFLAGS := -std=c11
@@ -61,13 +70,23 @@ CFLAGS := -std=c11
 # C++ flags
 CXXFLAGS := -std=c++17
 # C/C++ flags
+ifeq ($(shell arch), aarch64)
 CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -mcpu=cortex-a8 -mfpu=neon -Wall -DRASPBERRY_PI $(INCLUDE)
+else
+CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -Wall $(INCLUDE)
+endif
 #CPPFLAGS := -g -Wall -DRASPBERRY_PI $(INCLUDE)
 
 # linker flags
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lts
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lGLESv2 -lturbojpeg -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lepoxy
+ifeq ($(shell arch), aarch64)
 LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lturbojpeg -lpcap -lGLESv2 -lpigpio
+else
+LDFLAGS := -L/usr/lib
+LDLIBS := -std=c++17 -pthread -lGLESv2 -lSDL2 -lfreetype -lpcap -lturbojpeg
+endif
+
 # flags required for dependency generation; passed to compilers
 DEPFLAGS = -MT $@ -MD -MP -MF $(DEPDIR)/$*.Td
 
@@ -76,7 +95,12 @@ COMPILE.c = $(CC) $(DEPFLAGS) $(CFLAGS) $(CPPFLAGS) -c -o $@
 # compile C++ source files
 COMPILE.cc = $(CXX) $(DEPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -c -o $@
 # link object files to binary
+ifeq ($(shell arch), aarch64)
 LINK.o = $(LD) $(LDFLAGS) $(LDLIBS) -o $@
+else
+LINK.o = $(LD) $(LDFLAGS) -o $@ 
+endif
+
 # precompile step
 PRECOMPILE =
 # postcompile step
@@ -112,7 +136,11 @@ help:
 	@echo available targets: all dist clean distclean install uninstall check
 
 $(BIN): $(OBJS)
+ifeq ($(shell arch), aarch64)
 	$(LINK.o) $^
+else
+	$(LINK.o) $^ $(LDLIBS)
+endif
 
 $(OBJDIR)/%.o: %.c
 $(OBJDIR)/%.o: %.c $(DEPDIR)/%.d
