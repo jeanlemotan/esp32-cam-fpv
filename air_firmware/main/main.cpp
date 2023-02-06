@@ -691,7 +691,8 @@ esp_err_t set_wifi_fixed_rate(WIFI_Rate value)
         WIFI_PHY_RATE_MCS7_LGI,
         WIFI_PHY_RATE_MCS7_SGI,
     };
-    esp_err_t err = esp_wifi_internal_set_fix_rate(ESP_WIFI_IF, true, (wifi_phy_rate_t)rates[(int)value]);
+    //esp_err_t err = esp_wifi_internal_set_fix_rate(ESP_WIFI_IF, true, (wifi_phy_rate_t)rates[(int)value]);
+    esp_err_t err = esp_wifi_config_80211_tx_rate(ESP_WIFI_IF, (wifi_phy_rate_t)rates[(int)value]);
     //esp_err_t err = esp_wifi_internal_set_fix_rate(ESP_WIFI_IF, true, (wifi_phy_rate_t)value);
     if (err == ESP_OK)
         s_wlan_rate = value;
@@ -1159,6 +1160,7 @@ void setup_wifi()
         .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
     };
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_ctrl_filter(&filter));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(packet_received_cb));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
 
@@ -1434,7 +1436,7 @@ extern "C" void app_main()
     Ground2Air_Config_Packet& ground2air_config_packet = s_ground2air_config_packet;
     ground2air_config_packet.type = Ground2Air_Header::Type::Config;
     ground2air_config_packet.size = sizeof(ground2air_config_packet);
-    ground2air_config_packet.wifi_rate = WIFI_Rate::RATE_G_18M_ODFM;
+    ground2air_config_packet.wifi_rate = WIFI_Rate::RATE_G_54M_ODFM;
 
     srand(esp_timer_get_time());
 
