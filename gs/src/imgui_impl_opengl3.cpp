@@ -212,7 +212,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data, bool rotate)
     int prev_cy = -1;
     int prev_cw = -1;
     int prev_ch = -1;
-    uint32_t prev_texId = -1;
+    intptr_t prev_texId = -1;
 
     // Draw
     ImVec2 pos = draw_data->DisplayPos;

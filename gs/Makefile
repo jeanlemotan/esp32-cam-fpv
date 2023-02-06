@@ -70,7 +70,15 @@ CFLAGS := -std=c11
 # C++ flags
 CXXFLAGS := -std=c++17
 # C/C++ flags
+is_pi = 
 ifeq ($(shell arch), aarch64)
+	is_pi = yesl
+endif
+ifeq ($(shell arch), armv7l)
+	is_pi = yes
+endif
+
+ifdef is_pi
 CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -mcpu=cortex-a8 -mfpu=neon -Wall -DRASPBERRY_PI $(INCLUDE)
 else
 CPPFLAGS := -O3 -DNDEBUG -ffast-math -funroll-loops -Wall $(INCLUDE)
@@ -80,7 +88,7 @@ endif
 # linker flags
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lts
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lGLESv2 -lturbojpeg -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lepoxy
-ifeq ($(shell arch), aarch64)
+ifdef is_pi
 LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lturbojpeg -lpcap -lGLESv2 -lpigpio
 else
 LDFLAGS := -L/usr/lib
@@ -95,7 +103,7 @@ COMPILE.c = $(CC) $(DEPFLAGS) $(CFLAGS) $(CPPFLAGS) -c -o $@
 # compile C++ source files
 COMPILE.cc = $(CXX) $(DEPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -c -o $@
 # link object files to binary
-ifeq ($(shell arch), aarch64)
+ifdef is_pi
 LINK.o = $(LD) $(LDFLAGS) $(LDLIBS) -o $@
 else
 LINK.o = $(LD) $(LDFLAGS) -o $@ 

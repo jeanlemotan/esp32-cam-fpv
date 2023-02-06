@@ -70,7 +70,7 @@ static void comms_thread_proc()
     Clock::duration ping_max = std::chrono::seconds(0);
     Clock::duration ping_avg = std::chrono::seconds(0);
     size_t ping_count = 0;
-
+    size_t sent_count = 0;
     size_t total_data = 0;
     int16_t min_rssi = 0;
 
@@ -99,7 +99,7 @@ static void comms_thread_proc()
                 ping_avg = std::chrono::seconds(0);
             }
 
-            LOGI("RX len: {}, RSSI: {}, Latency: {}/{}/{}", total_data, min_rssi, 
+            LOGI("Sent: {}, RX len: {}, RSSI: {}, Latency: {}/{}/{}", sent_count, total_data, min_rssi, 
                 std::chrono::duration_cast<std::chrono::milliseconds>(ping_min).count(),
                 std::chrono::duration_cast<std::chrono::milliseconds>(ping_max).count(),
                 std::chrono::duration_cast<std::chrono::milliseconds>(ping_avg).count() / ping_count);
@@ -107,6 +107,7 @@ static void comms_thread_proc()
             ping_min = std::chrono::seconds(999);
             ping_max = std::chrono::seconds(0);
             ping_avg = std::chrono::seconds(0);
+            sent_count = 0;
             ping_count = 0;
             total_data = 0;
             min_rssi = 0;
@@ -125,6 +126,7 @@ static void comms_thread_proc()
             s_comms.send(&config, sizeof(config), true);
             last_comms_sent_tp = Clock::now();
             last_ping_sent_tp = Clock::now();
+            sent_count++;
         }
 
 #ifdef TEST_LATENCY

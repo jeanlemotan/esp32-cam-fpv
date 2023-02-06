@@ -270,7 +270,7 @@ bool PI_HAL::init_display_sdl()
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8); 
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0); 
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0); 
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -328,7 +328,7 @@ bool PI_HAL::init_display_sdl()
 
     SDL_GL_SetSwapInterval(0);
 
-    ImGui_ImplSDL2_SetMouseEnabled(false);
+    ImGui_ImplSDL2_SetMouseEnabled(true);
 
 #endif
     return true;
@@ -438,10 +438,10 @@ bool PI_HAL::update_display()
         }
     }
 
+    glFlush();
     SDL_GL_SwapWindow(m_impl->window);
     //SDL_GL_SwapWindow(m_impl->window);
     //SDL_GL_SwapWindow(m_impl->window);
-    //glFlush();
 
     ImGui_ImplSDL2_NewFrame(m_impl->window);
 #else
