@@ -1476,7 +1476,7 @@ extern "C" void app_main()
     }
     {
         int core = tskNO_AFFINITY;
-        BaseType_t res = xTaskCreatePinnedToCore(&sd_enqueue_proc, "SD Enq", 1024, nullptr, 1, &s_sd_enqueue_task, core);
+        BaseType_t res = xTaskCreatePinnedToCore(&sd_enqueue_proc, "SD Enq", 1536, nullptr, 1, &s_sd_enqueue_task, core);
         if (res != pdPASS)
             LOG("Failed sd enqueue task: %d\n", res);
     }
