@@ -72,7 +72,7 @@ CXXFLAGS := -std=c++17
 # C/C++ flags
 is_pi = 
 ifeq ($(shell arch), aarch64)
-	is_pi = yesl
+	is_pi = yes
 endif
 ifeq ($(shell arch), armv7l)
 	is_pi = yes
