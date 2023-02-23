@@ -35,6 +35,8 @@
 #include "queue.h"
 #include "circular_buffer.h"
 
+#include "ll_cam.h" // cam_obj_t defination, used in camera_data_available
+
 
 //#define WIFI_AP
 
@@ -1204,8 +1206,10 @@ IRAM_ATTR void send_air2ground_video_packet(bool last)
 
 constexpr size_t PAYLOAD_SIZE = AIR2GROUND_MTU - sizeof(Air2Ground_Video_Packet);
 
-IRAM_ATTR static void camera_data_available(const void* data, size_t stride, size_t count, bool last)
+IRAM_ATTR size_t camera_data_available(void * cam_obj,const uint8_t* data, size_t count, bool last)
 {
+    size_t stride=((cam_obj_t *)cam_obj)->dma_bytes_per_item;
+
     xSemaphoreTake(s_fec_encoder_mux, portMAX_DELAY);
 
     if (data == nullptr) //start frame
@@ -1216,8 +1220,8 @@ IRAM_ATTR static void camera_data_available(const void* data, size_t stride, siz
     {
         if (!s_video_skip_frame)
         {
-            const uint8_t* src = (const uint8_t*)data;
-
+            const uint8_t* src = (const uint8_t*)data + 2;  // jump to the sample1 of DMA element
+            count /= stride;
             if (last) //find the end marker for JPEG. Data after that can be discarded
             {
                 const uint8_t* dptr = src + (count - 2) * stride;
@@ -1234,6 +1238,7 @@ IRAM_ATTR static void camera_data_available(const void* data, size_t stride, siz
                     }
                     dptr -= stride;
                 }
+
             }
 
             while (count > 0)
@@ -1313,6 +1318,7 @@ IRAM_ATTR static void camera_data_available(const void* data, size_t stride, siz
     }
 
     xSemaphoreGive(s_fec_encoder_mux);
+    return count;
 }
 
 // IRAM_ATTR static void camera_proc(void* )
@@ -1346,18 +1352,21 @@ static void init_camera()
     config.pin_pclk = PCLK_GPIO_NUM;
     config.pin_vsync = VSYNC_GPIO_NUM;
     config.pin_href = HREF_GPIO_NUM;
-    config.pin_sscb_sda = SIOD_GPIO_NUM;
-    config.pin_sscb_scl = SIOC_GPIO_NUM;
+    config.pin_sccb_sda = SIOD_GPIO_NUM;
+    config.pin_sccb_scl = SIOC_GPIO_NUM;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
     config.frame_size = FRAMESIZE_SVGA;
     config.jpeg_quality = 4;
-    config.fb_count = 3;
+    config.fb_count = 2;
+    config.grab_mode = CAMERA_GRAB_LATEST;
+    config.fb_location = CAMERA_FB_IN_DRAM;
+    config.data_available_callback = camera_data_available;
 
     // camera init
-    esp_err_t err = esp_camera_init(&config, camera_data_available);
+    esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK)
     {
         LOG("Camera init failed with error 0x%x", err);
@@ -1427,6 +1436,7 @@ static void print_cpu_usage()
 #endif
 }
 
+
 extern "C" void app_main()
 {
     Ground2Air_Data_Packet& ground2air_data_packet = s_ground2air_data_packet;
@@ -1470,6 +1480,7 @@ extern "C" void app_main()
         if (res != pdPASS)
             LOG("Failed wifi rx task: %d\n", res);
     }
+
     {
         int core = tskNO_AFFINITY;
         BaseType_t res = xTaskCreatePinnedToCore(&sd_write_proc, "SD Write", 4096, nullptr, 1, &s_sd_write_task, core);
@@ -1482,7 +1493,6 @@ extern "C" void app_main()
         if (res != pdPASS)
             LOG("Failed sd enqueue task: %d\n", res);
     }
-    esp_camera_fb_get(); //this will start the camera capture
 
     printf("MEMORY Before Loop: \n");
     heap_caps_print_heap_info(MALLOC_CAP_8BIT);
